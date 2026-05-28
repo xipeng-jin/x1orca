@@ -22,6 +22,7 @@ import type {
   GitConflictResolutionStatus,
   GitConflictStatusSource,
   GlobalSettings,
+  GitFileStatus,
   GitPushTarget,
   GitStatusEntry,
   GitStatusResult,
@@ -193,6 +194,7 @@ export type OpenFile = {
    *  "open preview" actions can retarget an already-open preview tab. */
   markdownPreviewAnchor?: string
   diffSource?: DiffSource
+  diffStatus?: GitFileStatus
   branchCompare?: BranchCompareSnapshot
   commitCompare?: CommitCompareSnapshot
   branchOldPath?: string
@@ -266,6 +268,11 @@ type EditorOpenTargetOptions = {
 
 type GitRuntimeOperationOptions = {
   runtimeTargetSettings?: Pick<GlobalSettings, 'activeRuntimeEnvironmentId'> | null
+}
+
+type EditorOpenDiffOptions = EditorOpenTargetOptions & {
+  oldPath?: string
+  diffStatus?: GitFileStatus
 }
 
 export type PendingEditorReveal = {
@@ -451,7 +458,7 @@ export type EditorSlice = {
     relativePath: string,
     language: string,
     staged: boolean,
-    options?: EditorOpenTargetOptions
+    options?: EditorOpenDiffOptions
   ) => void
   openBranchDiff: (
     worktreeId: string,
@@ -1738,6 +1745,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         const needsExistingUpdate =
           existing.mode !== file.mode ||
           existing.diffSource !== file.diffSource ||
+          existing.diffStatus !== file.diffStatus ||
           existing.branchCompare?.compareVersion !== file.branchCompare?.compareVersion ||
           existing.commitCompare?.compareVersion !== file.commitCompare?.compareVersion ||
           existing.conflict?.kind !== file.conflict?.kind ||
@@ -1764,6 +1772,7 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
                   runtimeEnvironmentId,
                   mode: file.mode,
                   diffSource: file.diffSource,
+                  diffStatus: file.diffStatus,
                   branchCompare: file.branchCompare,
                   commitCompare: file.commitCompare,
                   branchOldPath: file.branchOldPath,
@@ -2588,6 +2597,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
     const runtimeEnvironmentId = options?.runtimeEnvironmentId
     let editorItemTargetGroupId = options?.targetGroupId
     let editorItemFileId = ''
+    const oldPath = options?.oldPath
+    const diffStatus = options?.diffStatus
     set((s) => {
       const diffSource: DiffSource = staged ? 'staged' : 'unstaged'
       const id = buildDiffEditorFileId(worktreeId, diffSource, relativePath, runtimeEnvironmentId)
@@ -2602,6 +2613,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
           ...existing,
           mode: 'diff' as const,
           diffSource,
+          diffStatus,
+          branchOldPath: oldPath,
           conflict: undefined,
           skippedConflicts: undefined,
           conflictReview: undefined,
@@ -2625,6 +2638,8 @@ export const createEditorSlice: StateCreator<AppState, [], [], EditorSlice> = (s
         isDirty: false,
         mode: 'diff',
         diffSource,
+        diffStatus,
+        branchOldPath: oldPath,
         conflict: undefined,
         skippedConflicts: undefined,
         conflictReview: undefined,

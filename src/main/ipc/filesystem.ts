@@ -991,6 +991,7 @@ export function registerFilesystemHandlers(
       args: {
         worktreePath: string
         filePath: string
+        oldPath?: string
         staged: boolean
         compareAgainstHead?: boolean
         connectionId?: string
@@ -1005,7 +1006,8 @@ export function registerFilesystemHandlers(
           args.worktreePath,
           args.filePath,
           args.staged,
-          args.compareAgainstHead
+          args.compareAgainstHead,
+          args.oldPath
         )
       }
       const worktreePath = await resolveRegisteredWorktreePath(args.worktreePath, store)
@@ -1015,7 +1017,13 @@ export function registerFilesystemHandlers(
         args.worktreePath,
         worktreePath
       )
-      return getDiff(worktreePath, filePath, args.staged, args.compareAgainstHead, gitOptions)
+      const oldPath = args.oldPath
+        ? validateGitRelativeFilePath(worktreePath, args.oldPath)
+        : undefined
+      return getDiff(worktreePath, filePath, args.staged, args.compareAgainstHead, {
+        ...gitOptions,
+        oldPath
+      })
     }
   )
 

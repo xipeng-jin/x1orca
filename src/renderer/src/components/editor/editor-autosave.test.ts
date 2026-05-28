@@ -46,7 +46,7 @@ afterEach(() => {
 })
 
 describe('canAutoSaveOpenFile', () => {
-  it('allows normal edit tabs and unstaged single-file diffs', () => {
+  it('allows normal edit tabs only', () => {
     expect(canAutoSaveOpenFile(makeOpenFile())).toBe(true)
     expect(
       canAutoSaveOpenFile(
@@ -56,7 +56,7 @@ describe('canAutoSaveOpenFile', () => {
           diffSource: 'unstaged'
         })
       )
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('rejects staged, combined, and conflict-review tabs', () => {
@@ -185,7 +185,7 @@ describe('isExternalReloadableEditorTab', () => {
 })
 
 describe('getOpenFilesForExternalFileChange', () => {
-  it('matches edit tabs and unstaged diff tabs for the same worktree file', () => {
+  it('matches edit and preview tabs for the same worktree file', () => {
     const matchingEdit = makeOpenFile()
     const matchingPreview = makeOpenFile({
       id: 'markdown-preview::/repo/file.ts',

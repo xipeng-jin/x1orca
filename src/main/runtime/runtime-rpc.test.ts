@@ -1589,7 +1589,12 @@ describe('OrcaRuntimeRpcServer', () => {
         id: 'req_git_diff',
         method: 'git.diff',
         deviceToken: mobile.token,
-        params: { worktree: 'id:wt-1', filePath: 'docs/readme.md', staged: false }
+        params: {
+          worktree: 'id:wt-1',
+          filePath: 'docs/readme.md',
+          oldPath: 'docs/old-readme.md',
+          staged: false
+        }
       }),
       (response) => replies.push(JSON.parse(response) as Record<string, unknown>),
       () => {}
@@ -1778,7 +1783,13 @@ describe('OrcaRuntimeRpcServer', () => {
     expect(abortRuntimeGitRebase).toHaveBeenCalledWith('id:wt-1')
     expect(bulkUnstageRuntimeGitPaths).toHaveBeenCalledWith('id:wt-1', ['c.ts'])
     expect(openMobileDiff).toHaveBeenCalledWith('id:wt-1', 'docs/readme.md', true)
-    expect(getRuntimeGitDiff).toHaveBeenCalledWith('id:wt-1', 'docs/readme.md', false, undefined)
+    expect(getRuntimeGitDiff).toHaveBeenCalledWith(
+      'id:wt-1',
+      'docs/readme.md',
+      false,
+      undefined,
+      'docs/old-readme.md'
+    )
     expect(browserTabCreate).toHaveBeenCalledWith({ worktree: 'id:wt-1', url: 'about:blank' })
     expect(browserSetViewport).toHaveBeenCalledWith({
       worktree: 'id:wt-1',

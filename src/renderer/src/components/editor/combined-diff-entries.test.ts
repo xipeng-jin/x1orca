@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getCombinedBranchEntries, getCombinedUncommittedEntries } from './combined-diff-entries'
+import {
+  getCombinedBranchEntries,
+  getCombinedUncommittedEntries,
+  getCombinedUncommittedEntryDiffOldPath
+} from './combined-diff-entries'
 import type { GitBranchChangeEntry, GitStatusEntry } from '../../../../shared/types'
 
 describe('getCombinedUncommittedEntries', () => {
@@ -56,5 +60,58 @@ describe('getCombinedBranchEntries', () => {
     const liveEntries: GitBranchChangeEntry[] = [{ path: 'src/live.ts', status: 'modified' }]
 
     expect(getCombinedBranchEntries(undefined, liveEntries)).toEqual(liveEntries)
+  })
+})
+
+describe('getCombinedUncommittedEntryDiffOldPath', () => {
+  it('keeps oldPath for staged rename entries', () => {
+    expect(
+      getCombinedUncommittedEntryDiffOldPath({
+        path: 'src/new.ts',
+        oldPath: 'src/old.ts',
+        status: 'renamed',
+        area: 'staged'
+      })
+    ).toBe('src/old.ts')
+  })
+
+  it('keeps oldPath for true unstaged rename entries', () => {
+    expect(
+      getCombinedUncommittedEntryDiffOldPath({
+        path: 'src/new.ts',
+        oldPath: 'src/old.ts',
+        status: 'renamed',
+        area: 'unstaged'
+      })
+    ).toBe('src/old.ts')
+  })
+
+  it('ignores oldPath for unstaged edit companions of staged renames', () => {
+    expect(
+      getCombinedUncommittedEntryDiffOldPath({
+        path: 'src/new.ts',
+        oldPath: 'src/old.ts',
+        status: 'modified',
+        area: 'unstaged'
+      })
+    ).toBeUndefined()
+  })
+
+  it('does not introduce oldPath for untracked or ordinary unstaged entries', () => {
+    expect(
+      getCombinedUncommittedEntryDiffOldPath({
+        path: 'src/new.ts',
+        status: 'untracked',
+        area: 'untracked'
+      })
+    ).toBeUndefined()
+
+    expect(
+      getCombinedUncommittedEntryDiffOldPath({
+        path: 'src/file.ts',
+        status: 'modified',
+        area: 'unstaged'
+      })
+    ).toBeUndefined()
   })
 })

@@ -561,11 +561,19 @@ describe('SshGitProvider', () => {
     const diffResult = { kind: 'text', originalContent: '', modifiedContent: 'hello' }
     mux.request.mockResolvedValue(diffResult)
 
-    const result = await provider.getDiff('/home/user/repo', 'src/index.ts', true)
+    const result = await provider.getDiff(
+      '/home/user/repo',
+      'src/index.ts',
+      true,
+      undefined,
+      'src/old-index.ts'
+    )
     expect(mux.request).toHaveBeenCalledWith('git.diff', {
       worktreePath: '/home/user/repo',
       filePath: 'src/index.ts',
-      staged: true
+      oldPath: 'src/old-index.ts',
+      staged: true,
+      compareAgainstHead: undefined
     })
     expect(result).toEqual(diffResult)
   })

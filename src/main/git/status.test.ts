@@ -334,6 +334,44 @@ describe('getDiff', () => {
     expect(result.modifiedContent).toBe('working-tree-content')
   })
 
+  it('uses oldPath as the left side for unstaged rename diffs', async () => {
+    gitExecFileAsyncBufferMock.mockResolvedValueOnce({ stdout: Buffer.from('old-content\n') })
+    readFileMock.mockResolvedValue(Buffer.from('new-content'))
+
+    const result = await getDiff('/repo', 'src/new-name.ts', false, false, 'src/old-name.ts')
+
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledWith(['show', ':src/old-name.ts'], {
+      cwd: '/repo',
+      maxBuffer: 10 * 1024 * 1024
+    })
+    expect(readFileMock).toHaveBeenCalledWith(path.join('/repo', 'src/new-name.ts'))
+    expect(result.originalContent).toBe('old-content\n')
+    expect(result.modifiedContent).toBe('new-content')
+  })
+
+  it('uses oldPath as the HEAD side for staged rename diffs', async () => {
+    gitExecFileAsyncBufferMock
+      .mockResolvedValueOnce({ stdout: Buffer.from('head-old-content\n') })
+      .mockResolvedValueOnce({ stdout: Buffer.from('index-new-content\n') })
+
+    const result = await getDiff('/repo', 'src/new-name.ts', true, false, 'src/old-name.ts')
+
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      1,
+      ['show', '--end-of-options', 'HEAD:src/old-name.ts'],
+      {
+        cwd: '/repo',
+        maxBuffer: 10 * 1024 * 1024
+      }
+    )
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(2, ['show', ':src/new-name.ts'], {
+      cwd: '/repo',
+      maxBuffer: 10 * 1024 * 1024
+    })
+    expect(result.originalContent).toBe('head-old-content\n')
+    expect(result.modifiedContent).toBe('index-new-content\n')
+  })
+
   it('marks binary content in the diff payload', async () => {
     gitExecFileAsyncBufferMock.mockResolvedValueOnce({ stdout: Buffer.from([0x00, 0x61, 0x62]) })
     readFileMock.mockResolvedValue(Buffer.from('working-tree-content'))

@@ -315,11 +315,13 @@ export class SshGitProvider implements IGitProvider {
     worktreePath: string,
     filePath: string,
     staged: boolean,
-    compareAgainstHead?: boolean
+    compareAgainstHead?: boolean,
+    oldPath?: string
   ): Promise<GitDiffResult> {
     return (await this.mux.request('git.diff', {
       worktreePath,
       filePath,
+      oldPath,
       staged,
       compareAgainstHead
     })) as GitDiffResult

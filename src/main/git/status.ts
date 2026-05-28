@@ -582,7 +582,7 @@ export async function getDiff(
   filePath: string,
   staged: boolean,
   compareAgainstHead = false,
-  options: GitRuntimeOptions = {}
+  options: GitRuntimeOptions & { oldPath?: string } = {}
 ): Promise<GitDiffResult> {
   let originalContent = ''
   let modifiedContent = ''
@@ -590,11 +590,12 @@ export async function getDiff(
   let modifiedIsBinary = false
 
   try {
+    const leftPath = options.oldPath ?? filePath
     const leftBlob = staged
-      ? await readGitBlobAtOidPath(worktreePath, 'HEAD', filePath, options)
+      ? await readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
       : compareAgainstHead
-        ? await readGitBlobAtOidPath(worktreePath, 'HEAD', filePath, options)
-        : await readUnstagedLeftBlob(worktreePath, filePath, options)
+        ? await readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
+        : await readUnstagedLeftBlob(worktreePath, leftPath, options)
     originalContent = leftBlob.content
     originalIsBinary = leftBlob.isBinary
 

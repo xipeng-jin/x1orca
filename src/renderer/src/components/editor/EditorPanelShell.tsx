@@ -10,6 +10,7 @@ import type { DiffContent, FileContent } from './editor-panel-content-types'
 import type { EditorToggleValue } from './EditorViewToggle'
 import { getUntitledFileRoot } from './untitled-file-rename-path'
 import { translate } from '@/i18n/i18n'
+import { PierreDiffWorkerPoolProvider } from './PierreDiffWorkerPoolProvider'
 
 type EditorPanelRenderModel = ReturnType<typeof getEditorPanelRenderModel>
 
@@ -92,6 +93,39 @@ export function EditorPanelShell({
   onRenameConfirm,
   markdownAnnotationsEnabled
 }: EditorPanelShellProps): JSX.Element {
+  const content = (
+    <Suspense fallback={<EditorLoadingFallback />}>
+      <EditorContent
+        activeFile={activeFile}
+        viewStateScopeId={activeViewStateId ?? activeFile.id}
+        fileContents={fileContents}
+        diffContents={diffContents}
+        editBuffers={editorDrafts}
+        openFiles={openFiles}
+        worktreeEntries={model.worktreeEntries}
+        resolvedLanguage={model.resolvedLanguage}
+        isMarkdown={model.isMarkdown}
+        isMermaid={model.isMermaid}
+        isCsv={model.isCsv}
+        isNotebook={model.isNotebook}
+        mdViewMode={model.mdViewMode}
+        isChangesMode={model.isDiffSurface && !model.isSingleDiff}
+        sideBySide={sideBySide}
+        pendingEditorReveal={pendingEditorReveal}
+        handleContentChange={onContentChange}
+        handleContentChangeForFile={onContentChangeForFile}
+        handleDirtyStateHint={onDirtyStateHint}
+        handleSave={onSave}
+        handleSaveForFile={onSaveForFile}
+        reloadFileContent={onReloadFileContent}
+        showMarkdownTableOfContents={showMarkdownTableOfContents}
+        showMarkdownFrontmatter={markdownFrontmatterVisible}
+        onCloseMarkdownTableOfContents={onCloseMarkdownTableOfContents}
+        markdownAnnotationsEnabled={markdownAnnotationsEnabled}
+      />
+    </Suspense>
+  )
+
   return (
     <div ref={panelRef} className="flex flex-col flex-1 min-w-0 min-h-0">
       {!model.isCombinedDiff && activeFile.mode !== 'check-details' && (
@@ -129,36 +163,11 @@ export function EditorPanelShell({
           onExportMarkdownToPdf={onExportMarkdownToPdf}
         />
       )}
-      <Suspense fallback={<EditorLoadingFallback />}>
-        <EditorContent
-          activeFile={activeFile}
-          viewStateScopeId={activeViewStateId ?? activeFile.id}
-          fileContents={fileContents}
-          diffContents={diffContents}
-          editBuffers={editorDrafts}
-          openFiles={openFiles}
-          worktreeEntries={model.worktreeEntries}
-          resolvedLanguage={model.resolvedLanguage}
-          isMarkdown={model.isMarkdown}
-          isMermaid={model.isMermaid}
-          isCsv={model.isCsv}
-          isNotebook={model.isNotebook}
-          mdViewMode={model.mdViewMode}
-          isChangesMode={model.isDiffSurface && !model.isSingleDiff}
-          sideBySide={sideBySide}
-          pendingEditorReveal={pendingEditorReveal}
-          handleContentChange={onContentChange}
-          handleContentChangeForFile={onContentChangeForFile}
-          handleDirtyStateHint={onDirtyStateHint}
-          handleSave={onSave}
-          handleSaveForFile={onSaveForFile}
-          reloadFileContent={onReloadFileContent}
-          showMarkdownTableOfContents={showMarkdownTableOfContents}
-          showMarkdownFrontmatter={markdownFrontmatterVisible}
-          onCloseMarkdownTableOfContents={onCloseMarkdownTableOfContents}
-          markdownAnnotationsEnabled={markdownAnnotationsEnabled}
-        />
-      </Suspense>
+      {model.isSingleDiff ? (
+        <PierreDiffWorkerPoolProvider>{content}</PierreDiffWorkerPoolProvider>
+      ) : (
+        content
+      )}
       <UntitledFileRenameDialog
         open={renameDialogFile !== null}
         currentName={renameDialogFile?.relativePath ?? ''}

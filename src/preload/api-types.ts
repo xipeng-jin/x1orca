@@ -2121,6 +2121,7 @@ export type PreloadApi = {
     diff: (args: {
       worktreePath: string
       filePath: string
+      oldPath?: string
       staged: boolean
       compareAgainstHead?: boolean
       connectionId?: string

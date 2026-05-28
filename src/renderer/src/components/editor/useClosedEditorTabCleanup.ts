@@ -61,6 +61,7 @@ function disposeClosedEditorTab(prevId: string, prevFile: OpenFile): void {
       }
       diffViewStateCache.delete(prevId)
       deleteCacheEntriesByPrefix(diffViewStateCache, `${prevId}::`)
+      scrollTopCache.delete(prevId)
       scrollTopCache.delete(`${prevId}:preview`)
       deleteCacheEntriesByPrefix(scrollTopCache, `${prevId}::`)
       break

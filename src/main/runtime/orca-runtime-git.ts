@@ -288,23 +288,34 @@ export class RuntimeGitCommands {
     worktreeSelector: string,
     filePath: string,
     staged: boolean,
-    compareAgainstHead?: boolean
+    compareAgainstHead?: boolean,
+    oldPath?: string
   ): Promise<GitDiffResult> {
     const target = await this.host.resolveRuntimeGitTarget(worktreeSelector)
     const relativePath = normalizeRuntimeGitRelativePath(filePath)
+    const relativeOldPath = oldPath ? normalizeRuntimeGitRelativePath(oldPath) : undefined
     const provider = target.connectionId ? getSshGitProvider(target.connectionId) : null
     if (target.connectionId) {
       if (!provider) {
         throw new Error(SSH_GIT_PROVIDER_UNAVAILABLE_MESSAGE)
       }
-      return provider.getDiff(target.worktree.path, relativePath, staged, compareAgainstHead)
+      return provider.getDiff(
+        target.worktree.path,
+        relativePath,
+        staged,
+        compareAgainstHead,
+        relativeOldPath
+      )
     }
     return getDiff(
       target.worktree.path,
       relativePath,
       staged,
       compareAgainstHead,
-      localGitOptionsForTarget(target)
+      {
+        ...localGitOptionsForTarget(target),
+        oldPath: relativeOldPath
+      }
     )
   }
 

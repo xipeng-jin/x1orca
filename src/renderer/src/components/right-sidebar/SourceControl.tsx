@@ -37,6 +37,7 @@ import { useActiveWorktree, useRepoById, useWorktreeMap } from '@/store/selector
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { detectLanguage } from '@/lib/language-detect'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { basename, dirname, joinPath } from '@/lib/path'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
@@ -560,6 +561,104 @@ function getSourceControlDirectoryActionPaths(
   }
 }
 
+type SourceControlEntryOpenDiffDeps = {
+  activeWorktreeId: string | null | undefined
+  worktreePath: string | null | undefined
+  entry: GitStatusEntry
+  targetGroupId?: string
+  preview?: boolean
+  trackConflictPath: (worktreeId: string, filePath: string, conflictKind: GitConflictKind) => void
+  openConflictFile: (
+    worktreeId: string,
+    worktreePath: string,
+    entry: GitStatusEntry,
+    language: string,
+    options?: { targetGroupId?: string; preview?: boolean }
+  ) => void
+  openDiff: (
+    worktreeId: string,
+    filePath: string,
+    relativePath: string,
+    language: string,
+    staged: boolean,
+    options?: {
+      targetGroupId?: string
+      preview?: boolean
+      oldPath?: string
+      diffStatus?: GitStatusEntry['status']
+    }
+  ) => void
+  openFile: (
+    file: {
+      filePath: string
+      relativePath: string
+      worktreeId: string
+      language: string
+      mode: 'edit'
+    },
+    options?: { targetGroupId?: string; preview?: boolean }
+  ) => void
+  setEditorViewMode: (filePath: string, mode: 'edit' | 'changes') => void
+}
+
+export function openSourceControlEntryDiff({
+  activeWorktreeId,
+  worktreePath,
+  entry,
+  targetGroupId,
+  preview,
+  trackConflictPath,
+  openConflictFile,
+  openDiff,
+  openFile,
+  setEditorViewMode
+}: SourceControlEntryOpenDiffDeps): void {
+  if (!activeWorktreeId || !worktreePath) {
+    return
+  }
+  const targetOptions =
+    targetGroupId || preview !== undefined
+      ? {
+          ...(targetGroupId ? { targetGroupId } : {}),
+          ...(preview !== undefined ? { preview } : {})
+        }
+      : undefined
+  if (entry.conflictKind && entry.conflictStatus) {
+    if (entry.conflictStatus === 'unresolved') {
+      trackConflictPath(activeWorktreeId, entry.path, entry.conflictKind)
+    }
+    openConflictFile(activeWorktreeId, worktreePath, entry, detectLanguage(entry.path), targetOptions)
+    return
+  }
+  const language = detectLanguage(entry.path)
+  const filePath = joinPath(worktreePath, entry.path)
+  // Why: unstaged markdown diffs open as a normal edit tab in Changes view mode
+  // so the sidebar and header toggle share one tab per editable markdown file.
+  if (language === 'markdown' && entry.area === 'unstaged') {
+    openFile(
+      {
+        filePath,
+        relativePath: entry.path,
+        worktreeId: activeWorktreeId,
+        language,
+        mode: 'edit'
+      },
+      targetOptions
+    )
+    setEditorViewMode(filePath, 'changes')
+    return
+  }
+  const diffSource = entry.area === 'staged' ? 'staged' : 'unstaged'
+  openDiff(activeWorktreeId, filePath, entry.path, language, entry.area === 'staged', {
+    ...(targetOptions ?? {}),
+    oldPath: getWorkingTreeDiffOldPath({
+      oldPath: entry.oldPath,
+      diffSource,
+      diffStatus: entry.status
+    }),
+    diffStatus: entry.status
+  })
+}
 type HostedReviewCreationState = {
   repoId: string
   worktreeId: string
@@ -3760,48 +3859,19 @@ function SourceControlInner(): React.JSX.Element {
 
   const handleOpenDiff = useCallback(
     (entry: GitStatusEntry, event?: SourceControlRowOpenEvent) => {
-      if (!activeWorktreeId || !worktreePath) {
-        return
-      }
       const targetGroupId = resolveSplitTargetGroupId(event)
       const openAsPreview = shouldOpenSourceControlRowAsPreview(event, targetGroupId)
-      if (entry.conflictKind && entry.conflictStatus) {
-        if (entry.conflictStatus === 'unresolved') {
-          trackConflictPath(activeWorktreeId, entry.path, entry.conflictKind)
-        }
-        openConflictFile(activeWorktreeId, worktreePath, entry, detectLanguage(entry.path), {
-          targetGroupId,
-          preview: openAsPreview
-        })
-        return
-      }
-      const language = detectLanguage(entry.path)
-      const filePath = joinPath(worktreePath, entry.path)
-      // Why: unstaged markdown diffs open as a normal edit tab in Changes
-      // view mode rather than a dedicated diff tab. This unifies sidebar
-      // clicks with the header's Edit|Changes toggle: there is exactly one
-      // tab per markdown file, and the sidebar click flips that tab's view
-      // mode. Staged diffs still open as a separate diff tab because the
-      // staged content is not what the editor would be editing. Non-markdown
-      // files keep the existing diff-tab flow until the diff-tab type is
-      // eventually collapsed (see reviews/changes-view-mode-plan.md §"Follow-up").
-      if (language === 'markdown' && entry.area === 'unstaged') {
-        openFile(
-          {
-            filePath,
-            relativePath: entry.path,
-            worktreeId: activeWorktreeId,
-            language,
-            mode: 'edit'
-          },
-          { targetGroupId, preview: openAsPreview }
-        )
-        setEditorViewMode(filePath, 'changes')
-        return
-      }
-      openDiff(activeWorktreeId, filePath, entry.path, language, entry.area === 'staged', {
+      openSourceControlEntryDiff({
+        activeWorktreeId,
+        worktreePath,
+        entry,
         targetGroupId,
-        preview: openAsPreview
+        preview: openAsPreview,
+        trackConflictPath,
+        openConflictFile,
+        openDiff,
+        openFile,
+        setEditorViewMode
       })
     },
     [
@@ -4524,9 +4594,9 @@ function SourceControlInner(): React.JSX.Element {
       // nor branch-compare diff has the file (e.g. the change has since been
       // committed and merged, but the note still references the file). Force
       // the editor tab into 'changes' mode and stamp scrollToDiffCommentId so
-      // the DiffViewer that EditorContent renders in changes mode picks up
-      // the scroll request — same surface the user can flip into manually
-      // via the editor's Edit/Changes toggle.
+      // the editable Changes renderer picks up the scroll request — same
+      // surface the user can flip into manually via the editor's Edit/Changes
+      // toggle.
       const absPath = joinPath(worktreePath, filePath)
       const language = detectLanguage(filePath)
       openFile({

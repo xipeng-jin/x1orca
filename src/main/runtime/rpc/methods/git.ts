@@ -141,7 +141,8 @@ export const GIT_METHODS: RpcMethod[] = [
         params.worktree,
         params.filePath,
         params.staged,
-        params.compareAgainstHead
+        params.compareAgainstHead,
+        params.oldPath
       )
   }),
   defineMethod({

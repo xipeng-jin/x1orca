@@ -8,6 +8,7 @@ import React, { lazy } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { detectLanguage } from '@/lib/language-detect'
 import { joinPath } from '@/lib/path'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { ChangesModeView } from './ChangesModeView'
@@ -826,7 +827,6 @@ export function EditorContent({
       </div>
     )
   }
-  const isEditable = activeFile.diffSource === 'unstaged'
   if (dc.kind === 'binary') {
     if (dc.isImage) {
       return (
@@ -904,6 +904,14 @@ export function EditorContent({
   const diffReloadNonce = activeFile.diffContentReloadNonce ?? 0
   const originalModelKey = `${diffViewStateKey}:original:${getDiffContentSignature(dc.originalContent)}`
   const modifiedModelKey = `${diffViewStateKey}:modified:${getDiffContentSignature(dc.modifiedContent)}:${diffReloadNonce}`
+  const diffViewerOldPath =
+    activeFile.diffSource === 'staged' || activeFile.diffSource === 'unstaged'
+      ? getWorkingTreeDiffOldPath({
+          oldPath: activeFile.branchOldPath,
+          diffSource: activeFile.diffSource,
+          diffStatus: activeFile.diffStatus
+        })
+      : activeFile.branchOldPath
   return (
     <DiffViewer
       key={`${viewStateScopeId}:${diffReloadNonce}:${getDiffContentSignature(dc.modifiedContent)}`}
@@ -915,13 +923,9 @@ export function EditorContent({
       largeDiffRenderLimit={dc.largeDiffRenderLimit}
       largeDiffSaveContentAvailable={largeDiffSaveContentAvailable}
       language={monacoLanguage}
-      filePath={activeFile.filePath}
       relativePath={activeFile.relativePath}
       sideBySide={sideBySide}
-      editable={isEditable}
-      worktreeId={activeFile.worktreeId}
-      onContentChange={isEditable ? handleContentChange : undefined}
-      onSave={isEditable ? (isMarkdown ? md.mdSave : handleSave) : undefined}
+      branchOldPath={diffViewerOldPath}
     />
   )
 }

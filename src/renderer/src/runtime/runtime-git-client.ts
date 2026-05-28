@@ -237,13 +237,14 @@ export async function abortRuntimeGitRebase(context: RuntimeGitContext): Promise
 
 export async function getRuntimeGitDiff(
   context: RuntimeGitContext,
-  args: { filePath: string; staged: boolean; compareAgainstHead?: boolean }
+  args: { filePath: string; oldPath?: string; staged: boolean; compareAgainstHead?: boolean }
 ): Promise<GitDiffResult> {
   const target = getActiveRuntimeTarget(context.settings)
   if (target.kind === 'local' || !context.worktreeId) {
     return window.api.git.diff({
       worktreePath: context.worktreePath,
       filePath: args.filePath,
+      oldPath: args.oldPath,
       staged: args.staged,
       compareAgainstHead: args.compareAgainstHead,
       connectionId: context.connectionId

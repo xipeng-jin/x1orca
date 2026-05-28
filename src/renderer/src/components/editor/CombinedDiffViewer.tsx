@@ -55,7 +55,11 @@ import {
   ORCA_EDITOR_EXTERNAL_FILE_CHANGE_EVENT,
   type EditorPathMutationTarget
 } from './editor-autosave'
-import { getCombinedBranchEntries, getCombinedUncommittedEntries } from './combined-diff-entries'
+import {
+  getCombinedBranchEntries,
+  getCombinedUncommittedEntries,
+  getCombinedUncommittedEntryDiffOldPath
+} from './combined-diff-entries'
 import { getDiffSectionEstimatedHeight, isIntrinsicHeightImageDiff } from './diff-section-layout'
 import { getLargeDiffRenderLimit } from './large-diff-render-limit'
 import { getStoredTextDiffContent, getStoredTextDiffResult } from './large-diff-section-content'
@@ -568,6 +572,9 @@ export default function CombinedDiffViewer({
             )
           )
         } else {
+          const isStagedEntry = 'area' in entry && entry.area === 'staged'
+          const oldPath =
+            'area' in entry ? getCombinedUncommittedEntryDiffOldPath(entry) : undefined
           result = await withDiffSectionLoadTimeout(
             getRuntimeGitDiff(
               {
@@ -578,7 +585,8 @@ export default function CombinedDiffViewer({
               },
               {
                 filePath: entry.path,
-                staged: 'area' in entry && entry.area === 'staged'
+                oldPath,
+                staged: isStagedEntry
               }
             )
           )
