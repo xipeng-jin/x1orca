@@ -96,12 +96,19 @@ describe('git RPC methods', () => {
       makeRequest('git.diff', {
         worktree: 'id:wt-1',
         filePath: 'src/index.ts',
+        oldPath: 'src/old-index.ts',
         staged: false,
         compareAgainstHead: true
       })
     )
 
-    expect(runtime.getRuntimeGitDiff).toHaveBeenCalledWith('id:wt-1', 'src/index.ts', false, true)
+    expect(runtime.getRuntimeGitDiff).toHaveBeenCalledWith(
+      'id:wt-1',
+      'src/index.ts',
+      false,
+      true,
+      'src/old-index.ts'
+    )
     expect(response).toMatchObject({
       ok: true,
       result: { kind: 'text', modifiedContent: 'hello' }

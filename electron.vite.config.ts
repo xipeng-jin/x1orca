@@ -91,6 +91,9 @@ export default defineConfig({
       }
     },
     plugins: [react(), tailwindcss()],
+    optimizeDeps: {
+      include: ['@pierre/diffs', '@pierre/diffs/react', '@pierre/diffs/worker/worker.js']
+    },
     worker: {
       format: 'es'
     }

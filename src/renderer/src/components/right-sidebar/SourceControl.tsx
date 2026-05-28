@@ -37,6 +37,7 @@ import { useActiveWorktree, useRepoById, useWorktreeMap } from '@/store/selector
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { detectLanguage } from '@/lib/language-detect'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { basename, dirname, joinPath } from '@/lib/path'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
@@ -368,6 +369,64 @@ function getSourceControlDirectoryActionPaths(
 type PendingDiffCommentsClear =
   | { kind: 'all'; worktreeId: string }
   | { kind: 'file'; worktreeId: string; filePath: string }
+
+type SourceControlEntryOpenDiffDeps = {
+  activeWorktreeId: string | null | undefined
+  worktreePath: string | null | undefined
+  entry: GitStatusEntry
+  trackConflictPath: (worktreeId: string, filePath: string, conflictKind: GitConflictKind) => void
+  openConflictFile: (
+    worktreeId: string,
+    worktreePath: string,
+    entry: GitStatusEntry,
+    language: string
+  ) => void
+  openDiff: (
+    worktreeId: string,
+    filePath: string,
+    relativePath: string,
+    language: string,
+    staged: boolean,
+    oldPath?: string,
+    diffStatus?: GitStatusEntry['status']
+  ) => void
+}
+
+export function openSourceControlEntryDiff({
+  activeWorktreeId,
+  worktreePath,
+  entry,
+  trackConflictPath,
+  openConflictFile,
+  openDiff
+}: SourceControlEntryOpenDiffDeps): void {
+  if (!activeWorktreeId || !worktreePath) {
+    return
+  }
+  if (entry.conflictKind && entry.conflictStatus) {
+    if (entry.conflictStatus === 'unresolved') {
+      trackConflictPath(activeWorktreeId, entry.path, entry.conflictKind)
+    }
+    openConflictFile(activeWorktreeId, worktreePath, entry, detectLanguage(entry.path))
+    return
+  }
+  const language = detectLanguage(entry.path)
+  const filePath = joinPath(worktreePath, entry.path)
+  const diffSource = entry.area === 'staged' ? 'staged' : 'unstaged'
+  openDiff(
+    activeWorktreeId,
+    filePath,
+    entry.path,
+    language,
+    entry.area === 'staged',
+    getWorkingTreeDiffOldPath({
+      oldPath: entry.oldPath,
+      diffSource,
+      diffStatus: entry.status
+    }),
+    entry.status
+  )
+}
 
 type HostedReviewCreationState = {
   repoId: string
@@ -2760,48 +2819,16 @@ function SourceControlInner(): React.JSX.Element {
 
   const handleOpenDiff = useCallback(
     (entry: GitStatusEntry) => {
-      if (!activeWorktreeId || !worktreePath) {
-        return
-      }
-      if (entry.conflictKind && entry.conflictStatus) {
-        if (entry.conflictStatus === 'unresolved') {
-          trackConflictPath(activeWorktreeId, entry.path, entry.conflictKind)
-        }
-        openConflictFile(activeWorktreeId, worktreePath, entry, detectLanguage(entry.path))
-        return
-      }
-      const language = detectLanguage(entry.path)
-      const filePath = joinPath(worktreePath, entry.path)
-      // Why: unstaged markdown diffs open as a normal edit tab in Changes
-      // view mode rather than a dedicated diff tab. This unifies sidebar
-      // clicks with the header's Edit|Changes toggle: there is exactly one
-      // tab per markdown file, and the sidebar click flips that tab's view
-      // mode. Staged diffs still open as a separate diff tab because the
-      // staged content is not what the editor would be editing. Non-markdown
-      // files keep the existing diff-tab flow until the diff-tab type is
-      // eventually collapsed (see reviews/changes-view-mode-plan.md §"Follow-up").
-      if (language === 'markdown' && entry.area === 'unstaged') {
-        openFile({
-          filePath,
-          relativePath: entry.path,
-          worktreeId: activeWorktreeId,
-          language,
-          mode: 'edit'
-        })
-        setEditorViewMode(filePath, 'changes')
-        return
-      }
-      openDiff(activeWorktreeId, filePath, entry.path, language, entry.area === 'staged')
+      openSourceControlEntryDiff({
+        activeWorktreeId,
+        worktreePath,
+        entry,
+        trackConflictPath,
+        openConflictFile,
+        openDiff
+      })
     },
-    [
-      activeWorktreeId,
-      worktreePath,
-      trackConflictPath,
-      openConflictFile,
-      openDiff,
-      openFile,
-      setEditorViewMode
-    ]
+    [activeWorktreeId, worktreePath, trackConflictPath, openConflictFile, openDiff]
   )
 
   const { selectedKeys, handleSelect, handleContextMenu, clearSelection } =
@@ -3500,9 +3527,9 @@ function SourceControlInner(): React.JSX.Element {
       // nor branch-compare diff has the file (e.g. the change has since been
       // committed and merged, but the note still references the file). Force
       // the editor tab into 'changes' mode and stamp scrollToDiffCommentId so
-      // the DiffViewer that EditorContent renders in changes mode picks up
-      // the scroll request — same surface the user can flip into manually
-      // via the editor's Edit/Changes toggle.
+      // the editable Changes renderer picks up the scroll request — same
+      // surface the user can flip into manually via the editor's Edit/Changes
+      // toggle.
       const absPath = joinPath(worktreePath, filePath)
       const language = detectLanguage(filePath)
       openFile({

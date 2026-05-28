@@ -49,7 +49,11 @@ import {
   createCombinedDiffSectionIndexMap,
   handleCombinedDiffFileTreeNavigation
 } from './CombinedDiffFileTree'
-import { getCombinedBranchEntries, getCombinedUncommittedEntries } from './combined-diff-entries'
+import {
+  getCombinedBranchEntries,
+  getCombinedUncommittedEntries,
+  getCombinedUncommittedEntryDiffOldPath
+} from './combined-diff-entries'
 import { getDiffSectionEstimatedHeight, isIntrinsicHeightImageDiff } from './diff-section-layout'
 import type { DiffSection } from './diff-section-types'
 import { getInitialCombinedDiffSectionLoadIndices } from './combined-diff-initial-section-load'
@@ -425,6 +429,9 @@ export default function CombinedDiffViewer({
             )
           )
         } else {
+          const isStagedEntry = 'area' in entry && entry.area === 'staged'
+          const oldPath =
+            'area' in entry ? getCombinedUncommittedEntryDiffOldPath(entry) : undefined
           result = await withDiffSectionLoadTimeout(
             getRuntimeGitDiff(
               {
@@ -435,7 +442,8 @@ export default function CombinedDiffViewer({
               },
               {
                 filePath: entry.path,
-                staged: 'area' in entry && entry.area === 'staged'
+                oldPath,
+                staged: isStagedEntry
               }
             )
           )

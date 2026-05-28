@@ -53,6 +53,7 @@ function disposeClosedEditorTab(prevId: string, prevFile: OpenFile): void {
       monaco.editor.getModel(monaco.Uri.parse(`diff:modified:${prevId}`))?.dispose()
       diffViewStateCache.delete(prevId)
       deleteCacheEntriesByPrefix(diffViewStateCache, `${prevId}::`)
+      scrollTopCache.delete(prevId)
       scrollTopCache.delete(`${prevId}:preview`)
       deleteCacheEntriesByPrefix(scrollTopCache, `${prevId}::`)
       break

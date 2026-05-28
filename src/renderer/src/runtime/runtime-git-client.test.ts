@@ -197,7 +197,12 @@ describe('runtime git client', () => {
         worktreeId: 'wt-1',
         worktreePath: '/repo'
       },
-      { filePath: 'src/a.ts', staged: false, compareAgainstHead: true }
+      {
+        filePath: 'src/a.ts',
+        oldPath: 'src/old-a.ts',
+        staged: false,
+        compareAgainstHead: true
+      }
     )
     await getRuntimeGitHistory(
       {
@@ -220,6 +225,7 @@ describe('runtime git client', () => {
       params: {
         worktree: 'wt-1',
         filePath: 'src/a.ts',
+        oldPath: 'src/old-a.ts',
         staged: false,
         compareAgainstHead: true
       },

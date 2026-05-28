@@ -18,6 +18,9 @@ export default defineConfig({
       '@': resolve('src/renderer/src')
     }
   },
+  optimizeDeps: {
+    include: ['@pierre/diffs', '@pierre/diffs/react', '@pierre/diffs/worker/worker.js']
+  },
   build: {
     outDir: resolve('out/web'),
     emptyOutDir: true,

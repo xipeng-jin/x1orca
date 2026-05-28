@@ -1,4 +1,5 @@
 import type { OpenFile } from '@/store/slices/editor'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import type { GitBranchChangeEntry, GitStatusEntry } from '../../../../shared/types'
 
 /**
@@ -28,4 +29,12 @@ export function getCombinedBranchEntries(
   // Why: an explicitly empty tab snapshot should stay empty instead of drifting
   // to later Source Control refreshes.
   return [...(snapshotEntries ?? liveEntries)]
+}
+
+export function getCombinedUncommittedEntryDiffOldPath(entry: GitStatusEntry): string | undefined {
+  return getWorkingTreeDiffOldPath({
+    oldPath: entry.oldPath,
+    diffSource: entry.area === 'staged' ? 'staged' : 'unstaged',
+    diffStatus: entry.status
+  })
 }

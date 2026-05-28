@@ -23,6 +23,7 @@ export const GitFilePath = WorktreeSelector.extend({
 })
 
 export const GitDiff = GitFilePath.extend({
+  oldPath: z.string().min(1, 'Missing old path').optional(),
   staged: z.boolean(),
   compareAgainstHead: z.boolean().optional()
 })

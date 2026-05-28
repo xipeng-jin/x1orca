@@ -17,14 +17,14 @@ describe('getMarkdownViewModes', () => {
     ).toEqual(['source', 'rich'])
   })
 
-  it('offers source and rich for single-file markdown diffs', () => {
+  it('does not offer markdown view modes for diff tabs', () => {
     expect(
       getMarkdownViewModes({
         language: 'markdown',
         mode: 'diff',
         diffSource: 'unstaged'
       })
-    ).toEqual(['source', 'rich'])
+    ).toEqual([])
   })
 
   it('does not offer preview for mermaid edit tabs', () => {
@@ -56,7 +56,7 @@ describe('markdown preview helpers', () => {
     ).toBe('rich')
   })
 
-  it('defaults markdown diffs to source mode', () => {
+  it('defaults markdown diffs to source mode without exposing a toggle', () => {
     expect(
       getDefaultMarkdownViewMode({
         language: 'markdown',

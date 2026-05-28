@@ -3,7 +3,7 @@ import type { OpenFile } from '@/store/slices/editor'
 import type { GitDiffResult, GitStatusEntry } from '../../../../shared/types'
 import { ConflictBanner } from './ConflictComponents'
 
-const DiffViewer = lazy(() => import('./DiffViewer'))
+const EditableChangesDiffViewer = lazy(() => import('./EditableChangesDiffViewer'))
 
 function getContentSignature(content: string): string {
   let hash = 2166136261
@@ -81,7 +81,7 @@ export function ChangesModeView({
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
-        <DiffViewer
+        <EditableChangesDiffViewer
           key={viewStateScopeId}
           modelKey={diffViewStateKey}
           originalModelKey={originalModelKey}

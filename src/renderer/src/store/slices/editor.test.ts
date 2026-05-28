@@ -321,6 +321,50 @@ describe('createEditorSlice openDiff', () => {
     ])
     expect(store.getState().activeFileId).toBe('wt-1::diff::staged::file.ts')
   })
+
+  it('stores and refreshes old paths and statuses for renamed staged and unstaged diffs', () => {
+    const store = createEditorStore()
+
+    store
+      .getState()
+      .openDiff(
+        'wt-1',
+        '/repo/new-name.ts',
+        'new-name.ts',
+        'typescript',
+        false,
+        'old-name.ts',
+        'renamed'
+      )
+
+    expect(store.getState().openFiles).toEqual([
+      expect.objectContaining({
+        id: 'wt-1::diff::unstaged::new-name.ts',
+        diffStatus: 'renamed',
+        branchOldPath: 'old-name.ts'
+      })
+    ])
+
+    store
+      .getState()
+      .openDiff(
+        'wt-1',
+        '/repo/new-name.ts',
+        'new-name.ts',
+        'typescript',
+        false,
+        undefined,
+        'modified'
+      )
+
+    expect(store.getState().openFiles).toEqual([
+      expect.objectContaining({
+        id: 'wt-1::diff::unstaged::new-name.ts',
+        diffStatus: 'modified',
+        branchOldPath: undefined
+      })
+    ])
+  })
 })
 
 describe('createEditorSlice floating editor activation', () => {

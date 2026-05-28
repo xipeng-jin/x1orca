@@ -8,6 +8,7 @@ import React, { lazy } from 'react'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import { detectLanguage } from '@/lib/language-detect'
 import { joinPath } from '@/lib/path'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import { ChangesModeView } from './ChangesModeView'
@@ -782,7 +783,6 @@ export function EditorContent({
       </div>
     )
   }
-  const isEditable = activeFile.diffSource === 'unstaged'
   if (dc.kind === 'binary') {
     if (dc.isImage) {
       return (
@@ -808,49 +808,24 @@ export function EditorContent({
       </div>
     )
   }
-  const modifiedDiffContent = editBuffers[activeFile.id] ?? dc.modifiedContent
-  if (isMarkdown && mdViewMode === 'preview') {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="border-b border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          {/* Why: a rendered markdown preview cannot express additions and
-          deletions simultaneously, so preview mode intentionally shows the
-          modified side of the diff. Source mode remains available for the
-          actual line-by-line comparison. */}
-          Previewing the modified version of this diff. Switch to source mode to inspect changes.
-        </div>
-        <div className="min-h-0 flex-1">
-          <MarkdownPreview
-            key={viewStateScopeId}
-            content={modifiedDiffContent}
-            filePath={activeFile.filePath}
-            sourceFileId={activeFile.id}
-            sourceWorktreeId={activeFile.worktreeId}
-            sourceRuntimeEnvironmentId={activeFile.runtimeEnvironmentId}
-            scrollCacheKey={`${diffViewStateKey}:preview`}
-            showTableOfContents={showMarkdownTableOfContents}
-            onCloseTableOfContents={onCloseMarkdownTableOfContents}
-            markdownAnnotationsEnabled={true}
-            {...md.previewProps}
-          />
-        </div>
-      </div>
-    )
-  }
+  const diffViewerOldPath =
+    activeFile.diffSource === 'staged' || activeFile.diffSource === 'unstaged'
+      ? getWorkingTreeDiffOldPath({
+          oldPath: activeFile.branchOldPath,
+          diffSource: activeFile.diffSource,
+          diffStatus: activeFile.diffStatus
+        })
+      : activeFile.branchOldPath
   return (
     <DiffViewer
       key={viewStateScopeId}
       modelKey={diffViewStateKey}
       originalContent={dc.originalContent}
-      modifiedContent={modifiedDiffContent}
+      modifiedContent={dc.modifiedContent}
       language={monacoLanguage}
-      filePath={activeFile.filePath}
       relativePath={activeFile.relativePath}
       sideBySide={sideBySide}
-      editable={isEditable}
-      worktreeId={activeFile.worktreeId}
-      onContentChange={isEditable ? handleContentChange : undefined}
-      onSave={isEditable ? (isMarkdown ? md.mdSave : handleSave) : undefined}
+      branchOldPath={diffViewerOldPath}
     />
   )
 }

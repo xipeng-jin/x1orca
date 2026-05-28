@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { OpenFile } from '@/store/slices/editor'
 import { getConnectionId } from '@/lib/connection-context'
 import { joinPath } from '@/lib/path'
+import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { useAppStore } from '@/store'
 import { getRuntimeFileReadScope, readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
@@ -49,7 +50,8 @@ function inFlightReadKey(connectionId: string | undefined, filePath: string): st
 function inFlightDiffKey(
   file: OpenFile,
   connectionId: string | undefined,
-  compareAgainstHead = false
+  compareAgainstHead = false,
+  effectiveOldPath?: string
 ): string {
   const branch =
     file.diffSource === 'branch' && file.branchCompare
@@ -59,7 +61,7 @@ function inFlightDiffKey(
     file.diffSource === 'commit' && file.commitCompare
       ? `${file.commitCompare.parentOid ?? 'empty-tree'}..${file.commitCompare.commitOid}::${file.branchOldPath ?? ''}`
       : ''
-  return `${connectionId ?? ''}::${file.diffSource ?? ''}::${compareAgainstHead ? 'head' : 'default'}::${file.filePath}::${branch}::${commit}`
+  return `${connectionId ?? ''}::${file.diffSource ?? ''}::${compareAgainstHead ? 'head' : 'default'}::${file.filePath}::${effectiveOldPath ?? ''}::${branch}::${commit}`
 }
 
 export function useEditorPanelContentState({
@@ -160,10 +162,20 @@ export function useEditorPanelContentState({
       const effectiveDiffSource: typeof file.diffSource =
         file.mode === 'edit' ? 'unstaged' : file.diffSource
       const compareAgainstHead = file.mode === 'edit'
+      const workingTreeOldPath =
+        effectiveDiffSource === 'staged' || effectiveDiffSource === 'unstaged'
+          ? getWorkingTreeDiffOldPath({
+              oldPath: file.branchOldPath,
+              diffSource: effectiveDiffSource,
+              diffStatus: file.diffStatus,
+              compareAgainstHead
+            })
+          : file.branchOldPath
       const key = inFlightDiffKey(
         { ...file, diffSource: effectiveDiffSource },
         gitScope ?? undefined,
-        compareAgainstHead
+        compareAgainstHead,
+        workingTreeOldPath
       )
       let pending = inFlightDiffReads.get(key)
       if (!pending) {
@@ -213,6 +225,7 @@ export function useEditorPanelContentState({
                   },
                   {
                     filePath: file.relativePath,
+                    oldPath: workingTreeOldPath,
                     staged: effectiveDiffSource === 'staged',
                     compareAgainstHead
                   }

@@ -49,11 +49,9 @@ export type EditorRequestFileCloseDetail = {
 }
 
 export function canAutoSaveOpenFile(file: OpenFile): boolean {
-  // Why: single-file editors and one-file unstaged diffs have an unambiguous
-  // write target. Combined diff and conflict-review tabs can represent multiple
-  // paths, so autosave must stay out of those surfaces until they have their
-  // own save coordination instead of guessing which file should be written.
-  return file.mode === 'edit' || (file.mode === 'diff' && file.diffSource === 'unstaged')
+  // Why: dedicated diff tabs are read-only review surfaces. Edits now live only
+  // in edit tabs, including the editable Changes view mode.
+  return file.mode === 'edit'
 }
 
 export function normalizeAutoSaveDelayMs(value: unknown): number {
@@ -80,9 +78,6 @@ export function getOpenFilesForExternalFileChange(
     }
     if (file.mode === 'edit' || file.mode === 'markdown-preview') {
       return file.filePath === absolutePath
-    }
-    if (file.mode === 'diff') {
-      return file.diffSource === 'unstaged' && file.relativePath === target.relativePath
     }
     return false
   })
