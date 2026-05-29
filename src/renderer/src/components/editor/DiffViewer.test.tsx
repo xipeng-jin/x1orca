@@ -82,12 +82,12 @@ describe('DiffViewer', () => {
     expect(props.fileDiff.cacheKey).not.toContain('diff:src/app.ts')
     expect(props.options).toMatchObject({
       diffStyle: 'unified',
-      expandUnchanged: true,
-      hunkSeparators: 'metadata',
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
       themeType: 'dark'
     })
     expect(props.options.onPostRender).toEqual(expect.any(Function))
+    expect(props.options).not.toHaveProperty('expandUnchanged')
+    expect(props.options).not.toHaveProperty('hunkSeparators')
     expect(props.options).not.toHaveProperty('unsafeCSS')
     expect(props.metrics).toMatchObject({
       hunkLineCount: 50,

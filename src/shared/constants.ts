@@ -278,7 +278,7 @@ export function getDefaultSettings(homedir: string): GlobalSettings {
     floatingTerminalCwdMigratedToAppWorkspace: true,
     floatingTerminalTriggerLocation: 'floating-button',
     notifications: getDefaultNotificationSettings(),
-    diffDefaultView: 'inline',
+    diffDefaultView: 'side-by-side',
     combinedDiffFileTreeVisibleByDefault: false,
     promptCacheTimerEnabled: false,
     promptCacheTtlMs: 300_000,

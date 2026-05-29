@@ -94,7 +94,7 @@ function createSettings(overrides: Partial<GlobalSettings> = {}): GlobalSettings
     floatingTerminalEnabled: false,
     floatingTerminalCwd: '~',
     floatingTerminalTriggerLocation: 'floating-button',
-    diffDefaultView: 'inline',
+    diffDefaultView: 'side-by-side',
     combinedDiffFileTreeVisibleByDefault: false,
     notifications: {
       enabled: true,
