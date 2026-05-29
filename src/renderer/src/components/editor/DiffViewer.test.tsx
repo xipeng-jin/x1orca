@@ -36,7 +36,6 @@ vi.mock('@pierre/diffs/react', async () => {
 })
 
 import DiffViewer, {
-  PIERRE_DIFF_UNSAFE_CSS,
   buildPierreDiffFile,
   getContentFingerprint,
   getFirstChangedRenderedLineIndex,
@@ -86,15 +85,10 @@ describe('DiffViewer', () => {
       expandUnchanged: true,
       hunkSeparators: 'metadata',
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
-      themeType: 'dark',
-      unsafeCSS: PIERRE_DIFF_UNSAFE_CSS
+      themeType: 'dark'
     })
     expect(props.options.onPostRender).toEqual(expect.any(Function))
-    expect(props.options.unsafeCSS).toContain('--editor-surface')
-    expect(props.options.unsafeCSS).toContain('--git-decoration-added')
-    expect(props.options.unsafeCSS).toContain('--git-decoration-deleted')
-    expect(props.options.unsafeCSS).toContain('--git-decoration-renamed')
-    expect(props.options.unsafeCSS).toContain('[data-diffs-header=default]')
+    expect(props.options).not.toHaveProperty('unsafeCSS')
     expect(props.metrics).toMatchObject({
       hunkLineCount: 50,
       lineHeight: 20,

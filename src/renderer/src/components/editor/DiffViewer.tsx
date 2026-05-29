@@ -23,42 +23,6 @@ type DiffViewerProps = {
   branchOldPath?: string
 }
 
-export const PIERRE_DIFF_UNSAFE_CSS = `
-:host {
-  --diffs-light-bg: var(--editor-surface);
-  --diffs-dark-bg: var(--editor-surface);
-  --diffs-light: var(--foreground);
-  --diffs-dark: var(--foreground);
-  --diffs-bg-context-override: color-mix(in srgb, var(--editor-surface) 94%, var(--muted-foreground));
-  --diffs-bg-context-gutter-override: color-mix(in srgb, var(--editor-surface) 91%, var(--muted-foreground));
-  --diffs-bg-separator-override: color-mix(in srgb, var(--editor-surface) 88%, var(--muted-foreground));
-  --diffs-fg-number-override: var(--muted-foreground);
-  --diffs-addition-color-override: var(--git-decoration-added);
-  --diffs-deletion-color-override: var(--git-decoration-deleted);
-  --diffs-modified-color-override: var(--git-decoration-modified);
-  --diffs-bg-addition-override: color-mix(in srgb, var(--git-decoration-added) 14%, var(--editor-surface));
-  --diffs-bg-deletion-override: color-mix(in srgb, var(--git-decoration-deleted) 14%, var(--editor-surface));
-  --diffs-bg-addition-emphasis-override: color-mix(in srgb, var(--git-decoration-added) 24%, transparent);
-  --diffs-bg-deletion-emphasis-override: color-mix(in srgb, var(--git-decoration-deleted) 24%, transparent);
-}
-
-[data-diffs-header=default] {
-  background-color: var(--editor-surface);
-  border-bottom: 1px solid var(--border);
-}
-
-[data-diffs-header=default] [data-metadata],
-[data-diffs-header=default] [data-prev-name] {
-  color: var(--muted-foreground);
-}
-
-[data-change-icon=rename-pure],
-[data-change-icon=rename-changed],
-[data-rename-icon] {
-  color: var(--git-decoration-renamed);
-}
-`
-
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5
 const FNV_PRIME_32 = 0x01000193
 const SECONDARY_HASH_SEED = 0x9e3779b9
@@ -305,7 +269,6 @@ export default function DiffViewer({
       theme: PIERRE_DIFF_THEMES,
       themeType,
       tokenizeMaxLineLength: 1_000,
-      unsafeCSS: PIERRE_DIFF_UNSAFE_CSS,
       onPostRender: (node, _instance, phase): void => {
         if (phase === 'unmount') {
           if (rafIdRef.current !== null) {
