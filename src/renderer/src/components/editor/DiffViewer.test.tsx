@@ -9,9 +9,7 @@ const mockState = vi.hoisted(() => ({
   virtualizerProps: [] as unknown[],
   store: {
     settings: {
-      theme: 'dark',
-      terminalFontSize: 13,
-      terminalFontFamily: 'Test Mono'
+      theme: 'dark'
     },
     editorFontZoomLevel: 0
   }
@@ -53,11 +51,12 @@ describe('DiffViewer', () => {
     mockState.fileDiffProps = []
     mockState.virtualizerProps = []
     mockState.store.settings.theme = 'dark'
+    mockState.store.editorFontZoomLevel = 0
     scrollTopCache.clear()
   })
 
-  it('passes Orca file contents to Pierre as a virtualized unified full-context diff', () => {
-    renderToStaticMarkup(
+  it('passes Orca file contents to Pierre as a virtualized unified diff', () => {
+    const html = renderToStaticMarkup(
       <DiffViewer
         modelKey="diff:src/app.ts"
         originalContent={'old line\n'}
@@ -89,6 +88,10 @@ describe('DiffViewer', () => {
     expect(props.options).not.toHaveProperty('expandUnchanged')
     expect(props.options).not.toHaveProperty('hunkSeparators')
     expect(props.options).not.toHaveProperty('unsafeCSS')
+    expect(html).not.toContain('--diffs-font-size')
+    expect(html).not.toContain('--diffs-line-height')
+    expect(html).not.toContain('--diffs-font-family')
+    expect(html).not.toContain('--diffs-header-font-family')
     expect(props.metrics).toMatchObject({
       hunkLineCount: 50,
       lineHeight: 20,
@@ -103,6 +106,32 @@ describe('DiffViewer', () => {
         overscrollSize: 1000,
         intersectionObserverMargin: 4000
       }
+    })
+  })
+
+  it('applies editor zoom using Pierre default font proportions', () => {
+    mockState.store.editorFontZoomLevel = 2
+    const html = renderToStaticMarkup(
+      <DiffViewer
+        modelKey="diff:src/app.ts"
+        originalContent={'old line\n'}
+        modifiedContent={'new line\n'}
+        language="typescript"
+        relativePath="src/app.ts"
+        sideBySide={false}
+      />
+    )
+
+    const props = mockState.fileDiffProps[0] as CapturedFileDiffProps
+    expect(html).toContain('--diffs-font-size:15px')
+    expect(html).toContain('--diffs-line-height:23px')
+    expect(html).not.toContain('--diffs-font-family')
+    expect(html).not.toContain('--diffs-header-font-family')
+    expect(props.metrics).toMatchObject({
+      hunkLineCount: 50,
+      lineHeight: 23,
+      diffHeaderHeight: 44,
+      spacing: 8
     })
   })
 
