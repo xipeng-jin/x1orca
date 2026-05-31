@@ -239,13 +239,26 @@ export default function CombinedDiffViewer({
     setScrollThumb({ visible: true, top, height })
   }, [])
 
+  const clearNotesCopiedResetTimer = useCallback((): void => {
+    if (notesCopiedResetTimerRef.current !== null) {
+      window.clearTimeout(notesCopiedResetTimerRef.current)
+      notesCopiedResetTimerRef.current = null
+    }
+  }, [])
+
   const setScrollContainerRef = useCallback(
     (node: HTMLDivElement | null) => {
       scrollContainerRef.current = node
       notesCopyMountedRef.current = node !== null
+      if (node === null) {
+        // Why: copied feedback is tied to the combined-diff surface lifetime;
+        // the root ref unmount is the same boundary that disables stale feedback.
+        clearNotesCopiedResetTimer()
+        return
+      }
       window.requestAnimationFrame(updateCombinedDiffScrollbar)
     },
-    [updateCombinedDiffScrollbar]
+    [clearNotesCopiedResetTimer, updateCombinedDiffScrollbar]
   )
 
   useEffect(() => {
@@ -278,14 +291,6 @@ export default function CombinedDiffViewer({
       setFileTreeCollapsedState(settings.combinedDiffFileTreeVisibleByDefault === false)
     }
   }, [settings?.combinedDiffFileTreeVisibleByDefault])
-
-  useEffect(() => {
-    return () => {
-      if (notesCopiedResetTimerRef.current !== null) {
-        window.clearTimeout(notesCopiedResetTimerRef.current)
-      }
-    }
-  }, [])
 
   const setFileTreeCollapsed = useCallback((collapsed: boolean) => {
     combinedDiffFileTreeCollapsedPreference = collapsed
@@ -1020,9 +1025,7 @@ export default function CombinedDiffViewer({
       if (!notesCopyMountedRef.current) {
         return
       }
-      if (notesCopiedResetTimerRef.current !== null) {
-        window.clearTimeout(notesCopiedResetTimerRef.current)
-      }
+      clearNotesCopiedResetTimer()
       setNotesCopied(true)
       notesCopiedResetTimerRef.current = window.setTimeout(() => {
         setNotesCopied(false)
@@ -1032,7 +1035,7 @@ export default function CombinedDiffViewer({
       // Why: clipboard writes can fail while the app is not focused; this
       // mirrors the sidebar notes action and keeps the popover non-blocking.
     }
-  }, [diffCommentCount, diffCommentsPrompt])
+  }, [clearNotesCopiedResetTimer, diffCommentCount, diffCommentsPrompt])
 
   const handleConfirmClearNotes = useCallback(async (): Promise<void> => {
     if (diffCommentCount === 0 || isClearingNotes) {
