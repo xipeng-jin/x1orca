@@ -66,7 +66,7 @@ describe('openSourceControlEntryDiff', () => {
     })
 
     expect(trackConflictPath).toHaveBeenCalledWith('wt-1', 'docs/readme.md', 'both_modified')
-    expect(openConflictFile).toHaveBeenCalledWith('wt-1', '/repo', conflict, 'markdown')
+    expect(openConflictFile).toHaveBeenCalledWith('wt-1', '/repo', conflict, 'markdown', undefined)
     expect(openDiff).not.toHaveBeenCalled()
   })
 

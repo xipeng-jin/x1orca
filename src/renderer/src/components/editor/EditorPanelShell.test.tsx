@@ -108,6 +108,7 @@ function renderShell(modelOverrides: Record<string, unknown>): string {
       onCloseMarkdownTableOfContents={vi.fn()}
       onCloseRenameDialog={vi.fn()}
       onRenameConfirm={vi.fn()}
+      markdownAnnotationsEnabled={false}
     />
   )
 }
