@@ -1372,6 +1372,77 @@ describe('Store', () => {
       customPrompt: 'Rollback commit prompt',
       customAgentCommand: 'claude'
     })
+    store.flush()
+    const persisted = JSON.parse(readFileSync(join(testState.dir, 'orca-data.json'), 'utf-8'))
+    expect(persisted.settings.sourceControlAi.actions.commitMessage).toEqual({
+      agentId: 'claude',
+      commandInputTemplate: '{basePrompt}\n\nRollback commit prompt'
+    })
+    expect(persisted.settings.sourceControlAi.actions.branchName).toEqual({
+      agentId: 'claude',
+      commandInputTemplate: '{basePrompt}\n\nRollback commit prompt'
+    })
+  })
+
+  it('does not let rollback projection clobber existing source-control action templates on load', async () => {
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {
+        sourceControlAi: {
+          enabled: true,
+          agentId: 'codex',
+          selectedModelByAgent: {},
+          selectedModelByAgentByHost: {},
+          discoveredModelsByAgent: {},
+          discoveredModelsByAgentByHost: {},
+          selectedThinkingByModel: {},
+          customAgentCommand: '',
+          instructionsByOperation: {
+            commitMessage: '',
+            pullRequest: '',
+            branchName: ''
+          },
+          actions: {
+            commitMessage: {
+              agentId: 'codex',
+              commandInputTemplate: 'use $best-commit-msg to write a commit'
+            },
+            branchName: {
+              agentId: 'claude',
+              commandInputTemplate: 'name this branch from {firstPrompt}'
+            }
+          },
+          prCreationDefaults: {}
+        },
+        commitMessageAi: {
+          enabled: true,
+          agentId: 'codex',
+          selectedModelByAgent: {},
+          selectedModelByAgentByHost: {},
+          discoveredModelsByAgent: {},
+          discoveredModelsByAgentByHost: {},
+          selectedThinkingByModel: {},
+          customPrompt: 'use $best-commit-msg to write a commit',
+          customAgentCommand: ''
+        }
+      },
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      workspaceSession: {}
+    })
+
+    const store = await createStore()
+
+    expect(store.getSettings().sourceControlAi?.actions?.commitMessage).toEqual({
+      agentId: 'codex',
+      commandInputTemplate: 'use $best-commit-msg to write a commit'
+    })
+    expect(store.getSettings().sourceControlAi?.actions?.branchName).toEqual({
+      agentId: 'claude',
+      commandInputTemplate: 'name this branch from {firstPrompt}'
+    })
   })
 
   it('normalizes malformed visible task providers on load', async () => {
@@ -2232,6 +2303,28 @@ describe('Store', () => {
     expect(reloaded.getRepo('r1')!.sourceControlAi).toBeUndefined()
   })
 
+  it('updateRepo treats source-control AI null as a transport clear sentinel', async () => {
+    const store = await createStore()
+    store.addRepo(
+      makeRepo({
+        sourceControlAi: {
+          enabled: true,
+          customAgentCommand: 'repo-agent {prompt}'
+        }
+      })
+    )
+
+    store.updateRepo('r1', {
+      sourceControlAi: null
+    })
+
+    expect(store.getRepo('r1')!.sourceControlAi).toBeUndefined()
+
+    store.flush()
+    const reloaded = await createStore()
+    expect(reloaded.getRepo('r1')!.sourceControlAi).toBeUndefined()
+  })
+
   it('updateRepo normalizes source-control AI overrides before storing', async () => {
     const store = await createStore()
     store.addRepo(makeRepo())
@@ -2264,6 +2357,11 @@ describe('Store', () => {
       instructionsByOperation: {
         commitMessage: 'Repo style'
       },
+      actionOverrides: {
+        commitMessage: {
+          commandInputTemplate: '{basePrompt}\n\nRepo style'
+        }
+      },
       prCreationDefaults: {
         draft: true,
         useTemplate: null
@@ -2290,7 +2388,12 @@ describe('Store', () => {
     const updated = store.updateRepo('r1', { sourceControlAi: 'bad' as never })
 
     expect(updated!.sourceControlAi).toEqual({
-      instructionsByOperation: { commitMessage: 'Keep me' }
+      instructionsByOperation: { commitMessage: 'Keep me' },
+      actionOverrides: {
+        commitMessage: {
+          commandInputTemplate: '{basePrompt}\n\nKeep me'
+        }
+      }
     })
   })
 

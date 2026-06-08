@@ -131,6 +131,7 @@ import type {
   SearchResult,
   StatsSummary,
   MemorySnapshot,
+  TuiAgent,
   UpdateStatus,
   Worktree,
   WorktreeBaseStatusEvent,
@@ -220,6 +221,8 @@ import type {
   CommitMessageAgentCapability,
   CommitMessageModelCapability
 } from '../shared/commit-message-agent-spec'
+import type { ResolvedSourceControlAiGenerationParams } from '../shared/source-control-ai'
+import type { SourceControlAiSettings } from '../shared/source-control-ai-types'
 import type { ShellOpenLocalPathResult } from '../shared/shell-open-types'
 import type { SkillDiscoveryResult, SkillDiscoveryTarget } from '../shared/skills'
 import type {
@@ -734,9 +737,8 @@ export type PreloadApi = {
           | 'externalWorktreeVisibilityPromptDismissedAt'
           | 'projectGroupId'
           | 'projectGroupOrder'
-          | 'sourceControlAi'
         >
-      >
+      > & { sourceControlAi?: Repo['sourceControlAi'] | null }
     }) => Promise<Repo>
     pickFolder: () => Promise<string | null>
     pickDirectory: () => Promise<string | null>
@@ -2021,6 +2023,9 @@ export type PreloadApi = {
       worktreePath: string
       repoId?: string
       connectionId?: string
+      sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
+      sourceControlAi?: SourceControlAiSettings
+      agentCmdOverrides?: Partial<Record<TuiAgent, string>>
     }) => Promise<
       | { success: true; message: string; agentLabel?: string }
       | { success: false; error: string; canceled?: boolean }
@@ -2050,13 +2055,17 @@ export type PreloadApi = {
       body: string
       draft: boolean
       connectionId?: string
+      sourceControlAiResolvedParams?: ResolvedSourceControlAiGenerationParams
+      sourceControlAi?: SourceControlAiSettings
+      agentCmdOverrides?: Partial<Record<TuiAgent, string>>
     }) => Promise<
       | {
           success: true
           fields: { base: string; title: string; body: string; draft: boolean }
           agentLabel?: string
+          branchChangedByPreparation?: boolean
         }
-      | { success: false; error: string; canceled?: boolean }
+      | { success: false; error: string; canceled?: boolean; branchChangedByPreparation?: boolean }
     >
     cancelGeneratePullRequestFields: (args: {
       worktreePath: string
