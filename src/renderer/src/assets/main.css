@@ -406,6 +406,48 @@
   scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent) transparent;
 }
 
+/* Pierre's diff renderer paints inside shadow DOM; the outer scrollbar gutter
+   needs to blend with Pierre's own theme background. */
+.pierre-diff-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 34%, transparent)
+    var(--orca-pierre-diff-scroll-bg);
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar-track {
+  background: var(--orca-pierre-diff-scroll-bg);
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar-corner {
+  background: var(--orca-pierre-diff-scroll-bg);
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted-foreground, #737373) 28%, transparent);
+  border: 3px solid var(--orca-pierre-diff-scroll-bg);
+  border-radius: 0;
+  background-clip: padding-box;
+  min-height: 28px;
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent);
+}
+
+.pierre-diff-scrollbar::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in srgb, var(--foreground, #171717) 36%, transparent);
+}
+
+.pierre-diff-scrollbar:hover {
+  scrollbar-color: color-mix(in srgb, var(--muted-foreground, #737373) 48%, transparent)
+    var(--orca-pierre-diff-scroll-bg);
+}
+
 /* Keep the sidebar gutter reserved; only the thumb fades in on hover. */
 .worktree-sidebar-scrollbar {
   /* Why: the scrollbar gutter is paint-only in Chromium; this keeps card

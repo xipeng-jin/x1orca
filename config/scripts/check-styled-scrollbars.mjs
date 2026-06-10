@@ -76,7 +76,9 @@ export async function main(root = process.cwd()) {
 
   console.error('Renderer vertical scroll containers must use an Orca scrollbar style.')
   console.error('Put the scrollbar class in the same class literal as the vertical overflow class.')
-  console.error('Use scrollbar-sleek, scrollbar-editor, or worktree-sidebar-scrollbar.')
+  console.error(
+    'Use scrollbar-sleek, scrollbar-editor, worktree-sidebar-scrollbar, or pierre-diff-scrollbar.'
+  )
   console.error('')
   console.error(formatReports(root, reports))
   return 1

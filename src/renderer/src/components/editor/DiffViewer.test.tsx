@@ -44,6 +44,14 @@ type CapturedFileDiffProps = {
   fileDiff: FileDiffMetadata
   options: Record<string, unknown>
   metrics: Record<string, unknown>
+  className?: string
+}
+
+type CapturedVirtualizerProps = {
+  className?: string
+  style?: Record<string, unknown>
+  contentClassName?: string
+  config?: Record<string, unknown>
 }
 
 describe('DiffViewer', () => {
@@ -81,17 +89,20 @@ describe('DiffViewer', () => {
     expect(props.fileDiff.cacheKey).not.toContain('diff:src/app.ts')
     expect(props.options).toMatchObject({
       diffStyle: 'unified',
+      hunkSeparators: 'line-info-basic',
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
       themeType: 'dark'
     })
     expect(props.options.onPostRender).toEqual(expect.any(Function))
+    expect(props.options).not.toHaveProperty('overflow')
     expect(props.options).not.toHaveProperty('expandUnchanged')
-    expect(props.options).not.toHaveProperty('hunkSeparators')
     expect(props.options).not.toHaveProperty('unsafeCSS')
     expect(html).not.toContain('--diffs-font-size')
     expect(html).not.toContain('--diffs-line-height')
     expect(html).not.toContain('--diffs-font-family')
     expect(html).not.toContain('--diffs-header-font-family')
+    expect(html).toContain('class="diff-editor h-full min-h-0 min-w-0"')
+    expect(html).not.toContain('diff-editor h-full min-h-0 bg-editor-surface')
     expect(props.metrics).toMatchObject({
       hunkLineCount: 50,
       lineHeight: 20,
@@ -99,13 +110,50 @@ describe('DiffViewer', () => {
       spacing: 8
     })
     expect(mockState.virtualizerProps).toHaveLength(1)
-    expect(mockState.virtualizerProps[0]).toMatchObject({
+    const virtualizerProps = mockState.virtualizerProps[0] as CapturedVirtualizerProps
+    const virtualizerClass = String(virtualizerProps.className ?? '')
+    expect(virtualizerClass).toContain('pierre-diff-scroll')
+    expect(virtualizerClass).toContain('h-full')
+    expect(virtualizerClass).toContain('min-h-0')
+    expect(virtualizerClass).toContain('overflow-auto')
+    expect(virtualizerClass).toContain('pierre-diff-scrollbar')
+    expect(virtualizerClass).not.toContain('overflow-x-clip')
+    expect(virtualizerClass).not.toContain('scrollbar-sleek')
+    expect(virtualizerClass).not.toContain('bg-editor-surface')
+    expect(virtualizerClass).not.toContain('scrollbar-editor')
+    expect(virtualizerProps).toMatchObject({
       className: expect.stringContaining('pierre-diff-scroll'),
+      style: {
+        colorScheme: 'dark',
+        '--orca-pierre-diff-scroll-bg': '#0a0a0a'
+      },
       contentClassName: 'min-h-full',
       config: {
         overscrollSize: 1000,
         intersectionObserverMargin: 4000
       }
+    })
+    expect(props.className).toBe('min-h-full')
+  })
+
+  it('uses Pierre light theme background for the outer diff scrollbar gutter', () => {
+    mockState.store.settings.theme = 'light'
+
+    renderToStaticMarkup(
+      <DiffViewer
+        modelKey="diff:src/app.ts"
+        originalContent={'old line\n'}
+        modifiedContent={'new line\n'}
+        language="typescript"
+        relativePath="src/app.ts"
+        sideBySide={false}
+      />
+    )
+
+    const virtualizerProps = mockState.virtualizerProps[0] as CapturedVirtualizerProps
+    expect(virtualizerProps.style).toMatchObject({
+      colorScheme: 'light',
+      '--orca-pierre-diff-scroll-bg': '#ffffff'
     })
   })
 

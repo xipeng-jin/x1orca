@@ -627,7 +627,13 @@ export function openSourceControlEntryDiff({
     if (entry.conflictStatus === 'unresolved') {
       trackConflictPath(activeWorktreeId, entry.path, entry.conflictKind)
     }
-    openConflictFile(activeWorktreeId, worktreePath, entry, detectLanguage(entry.path), targetOptions)
+    openConflictFile(
+      activeWorktreeId,
+      worktreePath,
+      entry,
+      detectLanguage(entry.path),
+      targetOptions
+    )
     return
   }
   const language = detectLanguage(entry.path)
@@ -650,7 +656,7 @@ export function openSourceControlEntryDiff({
   }
   const diffSource = entry.area === 'staged' ? 'staged' : 'unstaged'
   openDiff(activeWorktreeId, filePath, entry.path, language, entry.area === 'staged', {
-    ...(targetOptions ?? {}),
+    ...targetOptions,
     oldPath: getWorkingTreeDiffOldPath({
       oldPath: entry.oldPath,
       diffSource,

@@ -38,9 +38,18 @@ const PIERRE_DEFAULT_VIRTUAL_FILE_METRICS: VirtualFileMetrics = {
   diffHeaderHeight: 44,
   spacing: 8
 }
+// Pierre's default themes define --diffs-dark-bg:#0a0a0a and
+// --diffs-light-bg:#ffffff; the outer scrollbar lives outside its shadow DOM.
+const PIERRE_DEFAULT_SCROLL_BACKGROUND = {
+  dark: '#0a0a0a',
+  light: '#ffffff'
+} as const
 type PierreDiffTypographyStyle = React.CSSProperties & {
   '--diffs-font-size'?: string
   '--diffs-line-height'?: string
+}
+type PierreDiffScrollStyle = React.CSSProperties & {
+  '--orca-pierre-diff-scroll-bg': string
 }
 
 function fnv1a32(input: string, seed: number, multiplier: number): number {
@@ -196,6 +205,13 @@ export default function DiffViewer({
       '--diffs-line-height': `${zoomedLineHeight}px`
     }
   }, [editorFontZoomLevel, zoomedFontSize, zoomedLineHeight])
+  const scrollStyle = useMemo<PierreDiffScrollStyle>(
+    () => ({
+      colorScheme: themeType,
+      '--orca-pierre-diff-scroll-bg': PIERRE_DEFAULT_SCROLL_BACKGROUND[themeType]
+    }),
+    [themeType]
+  )
   const firstChangedLineIndex = useMemo(
     () =>
       fileDiff
@@ -282,6 +298,9 @@ export default function DiffViewer({
   const options = useMemo<FileDiffOptions<undefined>>(
     () => ({
       diffStyle: sideBySide ? 'split' : 'unified',
+      // Why: Pierre's default line-info separator draws rounded cap pieces that
+      // artifact at the viewport edge in Orca's single-file pane.
+      hunkSeparators: 'line-info-basic',
       theme: PIERRE_DIFF_THEMES,
       themeType,
       tokenizeMaxLineLength: 1_000,
@@ -324,13 +343,10 @@ export default function DiffViewer({
   }
 
   return (
-    <div
-      ref={rootRef}
-      className="diff-editor h-full min-h-0 bg-editor-surface"
-      style={typographyStyle}
-    >
+    <div ref={rootRef} className="diff-editor h-full min-h-0 min-w-0" style={typographyStyle}>
       <Virtualizer
-        className="pierre-diff-scroll h-full min-h-0 overflow-auto bg-editor-surface scrollbar-editor"
+        className="pierre-diff-scroll h-full min-h-0 overflow-auto pierre-diff-scrollbar"
+        style={scrollStyle}
         contentClassName="min-h-full"
         config={{
           overscrollSize: 1_000,

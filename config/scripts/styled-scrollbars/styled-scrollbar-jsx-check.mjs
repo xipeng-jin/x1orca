@@ -1,7 +1,7 @@
 import ts from 'typescript'
 
 const STYLED_SCROLLBAR_CLASSES = new Set(
-  'scrollbar-sleek scrollbar-editor worktree-sidebar-scrollbar'.split(' ')
+  'scrollbar-sleek scrollbar-editor worktree-sidebar-scrollbar pierre-diff-scrollbar'.split(' ')
 )
 // Why: vertical scroll is where native scrollbar drift keeps recurring. The
 // guard intentionally ignores horizontal-only overflow.
