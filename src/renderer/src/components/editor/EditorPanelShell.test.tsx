@@ -81,6 +81,8 @@ function renderShell(modelOverrides: Record<string, unknown>): string {
       model={createRenderModel(modelOverrides) as never}
       copiedPathVisible={false}
       showMarkdownTableOfContents={false}
+      canShowMarkdownFrontmatterToggle={false}
+      markdownFrontmatterVisible={false}
       sideBySide={false}
       openFiles={[activeFile]}
       fileContents={{}}
@@ -98,6 +100,7 @@ function renderShell(modelOverrides: Record<string, unknown>): string {
       onToggleSideBySide={vi.fn()}
       onEditorToggleChange={vi.fn()}
       onToggleMarkdownTableOfContents={vi.fn()}
+      onToggleMarkdownFrontmatter={vi.fn()}
       onExportMarkdownToPdf={vi.fn()}
       onContentChange={vi.fn()}
       onContentChangeForFile={vi.fn()}
