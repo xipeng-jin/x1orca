@@ -902,8 +902,6 @@ export function EditorContent({
   // rotates. Key off fetched diff content and explicit reload nonce, not live
   // edit-buffer text, so editable unstaged diffs keep their undo stack.
   const diffReloadNonce = activeFile.diffContentReloadNonce ?? 0
-  const originalModelKey = `${diffViewStateKey}:original:${getDiffContentSignature(dc.originalContent)}`
-  const modifiedModelKey = `${diffViewStateKey}:modified:${getDiffContentSignature(dc.modifiedContent)}:${diffReloadNonce}`
   const diffViewerOldPath =
     activeFile.diffSource === 'staged' || activeFile.diffSource === 'unstaged'
       ? getWorkingTreeDiffOldPath({
@@ -916,8 +914,6 @@ export function EditorContent({
     <DiffViewer
       key={`${viewStateScopeId}:${diffReloadNonce}:${getDiffContentSignature(dc.modifiedContent)}`}
       modelKey={diffViewStateKey}
-      originalModelKey={originalModelKey}
-      modifiedModelKey={modifiedModelKey}
       originalContent={dc.originalContent}
       modifiedContent={modifiedDiffContent}
       largeDiffRenderLimit={dc.largeDiffRenderLimit}

@@ -161,6 +161,7 @@ import type {
   DiffComment,
   GitBranchChangeEntry,
   GitBranchCompareSummary,
+  GitConflictKind,
   GitConflictOperation,
   GitPushTarget,
   GitStatusEntry,
