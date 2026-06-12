@@ -15,6 +15,7 @@ import { canUseChangesModeForFile } from './editor-panel-file-mode'
 import { getMarkdownRenderMode } from './markdown-render-mode'
 import { getMarkdownRichModeUnsupportedMessage } from './markdown-rich-mode'
 import { exceedsMarkdownRichModeSizeLimit } from './markdown-rich-size-limit'
+import { isSingleFileDiffTab } from './single-file-diff-tab'
 
 type StoreState = ReturnType<typeof useAppStore.getState>
 
@@ -37,12 +38,9 @@ export function getEditorPanelRenderModel({
   markdownViewMode,
   isChangesMode
 }: EditorPanelRenderModelParams) {
-  const isSingleDiff =
-    activeFile.mode === 'diff' &&
-    activeFile.diffSource !== undefined &&
-    activeFile.diffSource !== 'combined-uncommitted' &&
-    activeFile.diffSource !== 'combined-branch' &&
-    activeFile.diffSource !== 'combined-commit'
+  // Shared with the worker-pool demand selector so a tab that renders Pierre's
+  // CodeView always arms the app-wide pool latch.
+  const isSingleDiff = isSingleFileDiffTab(activeFile)
   const isCombinedDiff =
     activeFile.mode === 'diff' &&
     (activeFile.diffSource === 'combined-uncommitted' ||

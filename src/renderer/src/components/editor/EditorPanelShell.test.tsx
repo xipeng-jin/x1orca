@@ -21,12 +21,6 @@ vi.mock('./UntitledFileRenameDialog', () => ({
   UntitledFileRenameDialog: () => null
 }))
 
-vi.mock('./PierreDiffWorkerPoolProvider', () => ({
-  PierreDiffWorkerPoolProvider: ({ children }: { children: React.ReactNode }) => (
-    <section data-testid="pierre-worker-provider">{children}</section>
-  )
-}))
-
 import { EditorPanelShell } from './EditorPanelShell'
 
 function createOpenFile(overrides: Partial<OpenFile> = {}): OpenFile {
@@ -117,18 +111,17 @@ function renderShell(modelOverrides: Record<string, unknown>): string {
 }
 
 describe('EditorPanelShell', () => {
-  it('scopes the Pierre worker provider to dedicated single-file diff tabs', () => {
-    expect(renderShell({ isSingleDiff: true, isDiffSurface: true })).toContain(
-      'data-testid="pierre-worker-provider"'
-    )
+  // The Pierre worker pool provider is app-wide (mounted in main.tsx); the
+  // shell must render diff and edit surfaces without wrapping its own.
+  it('renders single-file diff tabs directly, without a per-tab worker provider', () => {
+    const html = renderShell({ isSingleDiff: true, isDiffSurface: true })
+    expect(html).toContain('data-testid="editor-content"')
+    expect(html).not.toContain('pierre-worker-provider')
   })
 
-  it('does not mount the Pierre worker provider for non-Pierre editor surfaces', () => {
-    expect(renderShell({ isSingleDiff: false, isDiffSurface: false })).not.toContain(
-      'data-testid="pierre-worker-provider"'
-    )
-    expect(renderShell({ isCombinedDiff: true, isDiffSurface: true })).not.toContain(
-      'data-testid="pierre-worker-provider"'
+  it('renders non-diff surfaces the same way', () => {
+    expect(renderShell({ isSingleDiff: false, isDiffSurface: false })).toContain(
+      'data-testid="editor-content"'
     )
   })
 })

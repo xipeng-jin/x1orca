@@ -10,7 +10,6 @@ import type { DiffContent, FileContent } from './editor-panel-content-types'
 import type { EditorToggleValue } from './EditorViewToggle'
 import { getUntitledFileRoot } from './untitled-file-rename-path'
 import { translate } from '@/i18n/i18n'
-import { PierreDiffWorkerPoolProvider } from './PierreDiffWorkerPoolProvider'
 
 type EditorPanelRenderModel = ReturnType<typeof getEditorPanelRenderModel>
 
@@ -163,11 +162,10 @@ export function EditorPanelShell({
           onExportMarkdownToPdf={onExportMarkdownToPdf}
         />
       )}
-      {model.isSingleDiff ? (
-        <PierreDiffWorkerPoolProvider>{content}</PierreDiffWorkerPoolProvider>
-      ) : (
-        content
-      )}
+      {/* Why: the Pierre worker pool provider is app-wide (see main.tsx); no
+          per-tab provider here: mounting one per diff tab made Pierre tear
+          down the pool and its highlight cache on every tab switch. */}
+      {content}
       <UntitledFileRenameDialog
         open={renameDialogFile !== null}
         currentName={renameDialogFile?.relativePath ?? ''}

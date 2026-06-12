@@ -23,6 +23,19 @@ export type PaneManagerLike = {
   resumeRendering?(): void
 }
 
+// Subset of Pierre's WorkerPoolManager.getStats() used by pool-persistence
+// assertions (Pierre renders in a closed shadow root, so stats are the only
+// observable pool signal).
+export type PierreWorkerPoolStats = {
+  managerState: 'waiting' | 'initializing' | 'initialized'
+  totalWorkers: number
+  diffCacheSize: number
+}
+
+export type PierreWorkerPoolLike = {
+  getStats(): PierreWorkerPoolStats
+}
+
 export type ExplorerFileSummary = Pick<OpenFile, 'id' | 'filePath' | 'relativePath'>
 export type BrowserTabSummary = Pick<BrowserWorkspace, 'id' | 'url' | 'title'>
 export type TerminalTabSummary = Pick<TerminalTab, 'id' | 'title' | 'customTitle'>
@@ -47,6 +60,7 @@ declare global {
   interface Window {
     __store?: AppStore
     __paneManagers?: Map<string, PaneManagerLike>
+    __pierreDiffWorkerPool?: PierreWorkerPoolLike & { __e2eInstanceTag?: string }
   }
 }
 
