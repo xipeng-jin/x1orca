@@ -1,21 +1,11 @@
-/* oxlint-disable max-lines -- Why: content loading, retry, and external-change
-   subscriptions share in-flight caches and state setters; splitting them would
-   make the hook coordination harder to audit. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { OpenFile } from '@/store/slices/editor'
 import { getConnectionId } from '@/lib/connection-context'
 import { joinPath } from '@/lib/path'
-import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { useAppStore } from '@/store'
-import { getRuntimeFileReadScope, readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
-import {
-  getRuntimeGitBranchDiff,
-  getRuntimeGitCommitDiff,
-  getRuntimeGitDiff,
-  getRuntimeGitScope
-} from '@/runtime/runtime-git-client'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
+import { fetchEditorDiffContent, fetchEditorFileContent } from './editor-content-fetch'
 import { canUseChangesModeForFile } from './editor-panel-file-mode'
 import {
   isReloadableSingleFileDiffTab,
@@ -26,9 +16,6 @@ import {
   usePruneClosedEditorContent
 } from './useEditorPanelExternalContentEvents'
 import { useEditorPanelFileLoadRetry } from './useEditorPanelFileLoadRetry'
-
-const inFlightFileReads = new Map<string, Promise<FileContent>>()
-const inFlightDiffReads = new Map<string, Promise<DiffContent>>()
 
 type GitStatusByWorktree = ReturnType<typeof useAppStore.getState>['gitStatusByWorktree']
 type EditorViewModeByFile = ReturnType<typeof useAppStore.getState>['editorViewMode']
@@ -45,27 +32,6 @@ type UseEditorPanelContentStateResult = {
   fileContents: Record<string, FileContent>
   diffContents: Record<string, DiffContent>
   reloadFileContent: (file: OpenFile) => void
-}
-
-function inFlightReadKey(connectionId: string | undefined, filePath: string): string {
-  return `${connectionId ?? ''}::${filePath}`
-}
-
-function inFlightDiffKey(
-  file: OpenFile,
-  connectionId: string | undefined,
-  compareAgainstHead = false,
-  effectiveOldPath?: string
-): string {
-  const branch =
-    file.diffSource === 'branch' && file.branchCompare
-      ? `${file.branchCompare.baseOid ?? ''}..${file.branchCompare.headOid ?? ''}::${file.branchOldPath ?? ''}`
-      : ''
-  const commit =
-    file.diffSource === 'commit' && file.commitCompare
-      ? `${file.commitCompare.parentOid ?? 'empty-tree'}..${file.commitCompare.commitOid}::${file.branchOldPath ?? ''}`
-      : ''
-  return `${connectionId ?? ''}::${file.diffSource ?? ''}::${compareAgainstHead ? 'head' : 'default'}::${file.filePath}::${effectiveOldPath ?? ''}::${branch}::${commit}`
 }
 
 export function useEditorPanelContentState({
@@ -94,7 +60,8 @@ export function useEditorPanelContentState({
       filePath: string,
       id: string,
       worktreeId?: string,
-      relativePath?: string
+      relativePath?: string,
+      options?: { force?: boolean }
     ): Promise<void> => {
       try {
         const connectionId = getConnectionId(worktreeId ?? null) ?? undefined
@@ -115,25 +82,16 @@ export function useEditorPanelContentState({
           // refreshed because that authorization is only held in memory.
           await window.api.fs.authorizeExternalPath({ targetPath: filePath })
         }
-        const readScope = getRuntimeFileReadScope(readSettings, connectionId)
-        const key = inFlightReadKey(readScope, filePath)
-        let pending = inFlightFileReads.get(key)
-        if (!pending) {
-          pending = readRuntimeFileContent({
+        const result = await fetchEditorFileContent(
+          {
             settings: readSettings,
             filePath,
             relativePath: restoredOpenFile?.relativePath ?? relativePath,
             worktreeId,
             connectionId
-          }) as Promise<FileContent>
-          inFlightFileReads.set(key, pending)
-          queueMicrotask(() => {
-            if (inFlightFileReads.get(key) === pending) {
-              inFlightFileReads.delete(key)
-            }
-          })
-        }
-        const result = await pending
+          },
+          options
+        )
         delete fileLoadRetryAttemptsRef.current[id]
         setFileContents((prev) => ({ ...prev, [id]: result }))
       } catch (err) {
@@ -153,102 +111,7 @@ export function useEditorPanelContentState({
         return
       }
       try {
-        const worktreePath = file.filePath.slice(
-          0,
-          file.filePath.length - file.relativePath.length - 1
-        )
-        const branchCompare =
-          file.branchCompare?.baseOid && file.branchCompare.headOid && file.branchCompare.mergeBase
-            ? file.branchCompare
-            : null
-        const commitCompare = file.commitCompare?.commitOid ? file.commitCompare : null
-        const connectionId = getConnectionId(file.worktreeId) ?? undefined
-        const activeSettings = useAppStore.getState().settings
-        const fileSettings = settingsForRuntimeOwner(activeSettings, file.runtimeEnvironmentId)
-        const gitScope = getRuntimeGitScope(fileSettings, connectionId)
-        const effectiveDiffSource: typeof file.diffSource =
-          file.mode === 'edit' ? 'unstaged' : file.diffSource
-        const compareAgainstHead = file.mode === 'edit'
-        const workingTreeOldPath =
-          effectiveDiffSource === 'staged' || effectiveDiffSource === 'unstaged'
-            ? getWorkingTreeDiffOldPath({
-                oldPath: file.branchOldPath,
-                diffSource: effectiveDiffSource,
-                diffStatus: file.diffStatus,
-                compareAgainstHead
-              })
-            : file.branchOldPath
-        const key = inFlightDiffKey(
-          { ...file, diffSource: effectiveDiffSource },
-          gitScope ?? undefined,
-          compareAgainstHead,
-          workingTreeOldPath
-        )
-        if (options?.force) {
-          inFlightDiffReads.delete(key)
-        }
-        let pending = inFlightDiffReads.get(key)
-        if (!pending) {
-          pending = (
-            effectiveDiffSource === 'commit'
-              ? commitCompare
-                ? getRuntimeGitCommitDiff(
-                    {
-                      settings: fileSettings,
-                      worktreeId: file.worktreeId,
-                      worktreePath,
-                      connectionId
-                    },
-                    {
-                      commitOid: commitCompare.commitOid,
-                      parentOid: commitCompare.parentOid,
-                      filePath: file.relativePath,
-                      oldPath: file.branchOldPath
-                    }
-                  )
-                : Promise.reject(new Error('Missing commit comparison for diff tab.'))
-              : effectiveDiffSource === 'branch' && branchCompare
-                ? getRuntimeGitBranchDiff(
-                    {
-                      settings: fileSettings,
-                      worktreeId: file.worktreeId,
-                      worktreePath,
-                      connectionId
-                    },
-                    {
-                      compare: {
-                        baseRef: branchCompare.baseRef,
-                        baseOid: branchCompare.baseOid!,
-                        headOid: branchCompare.headOid!,
-                        mergeBase: branchCompare.mergeBase!
-                      },
-                      filePath: file.relativePath,
-                      oldPath: file.branchOldPath
-                    }
-                  )
-                : getRuntimeGitDiff(
-                    {
-                      settings: fileSettings,
-                      worktreeId: file.worktreeId,
-                      worktreePath,
-                      connectionId
-                    },
-                    {
-                      filePath: file.relativePath,
-                      oldPath: workingTreeOldPath,
-                      staged: effectiveDiffSource === 'staged',
-                      compareAgainstHead
-                    }
-                  )
-          ) as Promise<DiffContent>
-          inFlightDiffReads.set(key, pending)
-          queueMicrotask(() => {
-            if (inFlightDiffReads.get(key) === pending) {
-              inFlightDiffReads.delete(key)
-            }
-          })
-        }
-        const result = await pending
+        const result = await fetchEditorDiffContent(file, options)
         setDiffContents((prev) => ({ ...prev, [file.id]: result }))
       } catch (err) {
         setDiffContents((prev) => ({
@@ -277,7 +140,11 @@ export function useEditorPanelContentState({
         delete next[file.id]
         return next
       })
-      void loadFileContent(file.filePath, file.id, file.worktreeId, file.relativePath)
+      // Why: an explicit reload must bypass a still-in-flight read that may
+      // hold stale content now that in-flight entries live for the whole RPC.
+      void loadFileContent(file.filePath, file.id, file.worktreeId, file.relativePath, {
+        force: true
+      })
     },
     [loadFileContent]
   )
