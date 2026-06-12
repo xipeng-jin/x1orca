@@ -448,6 +448,15 @@
     var(--orca-pierre-diff-scroll-bg);
 }
 
+/* scrollbar-width/scrollbar-color are inherited and cross into Pierre's shadow DOM,
+   where they disable its [data-code]::-webkit-scrollbar sizing and reopen a scrollbar
+   gutter inside each code block — shrinking the 100cqi container that sizes line-info
+   hunk separators. Reset at the shadow host so the styling stays on the outer scroller. */
+.pierre-diff-scroll diffs-container {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
 /* Keep the sidebar gutter reserved; only the thumb fades in on hover. */
 .worktree-sidebar-scrollbar {
   /* Why: the scrollbar gutter is paint-only in Chromium; this keeps card

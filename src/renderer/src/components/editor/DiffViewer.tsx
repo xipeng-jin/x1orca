@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react'
-import { FileDiff, Virtualizer, type FileContents } from '@pierre/diffs/react'
+import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import {
   getFiletypeFromFileName,
   parseDiffFromFile,
-  type FileDiffOptions,
+  type CodeViewItem,
+  type CodeViewOptions,
+  type FileContents,
   type FileDiffMetadata,
   type SupportedLanguages,
   type VirtualFileMetrics
@@ -29,15 +31,10 @@ const SECONDARY_HASH_SEED = 0x9e3779b9
 const SECONDARY_HASH_MULTIPLIER = 0x85ebca6b
 const PIERRE_DEFAULT_FONT_SIZE = 13
 const PIERRE_DEFAULT_LINE_HEIGHT = 20
+const PIERRE_CODE_VIEW_DIFF_ITEM_ID = 'orca-single-file-diff'
 // Pierre defaults to 13px text and a 20px line box. Diff zoom keeps that
 // proportion so virtual metrics and rendered rows continue to agree.
 const PIERRE_DEFAULT_LINE_HEIGHT_RATIO = PIERRE_DEFAULT_LINE_HEIGHT / PIERRE_DEFAULT_FONT_SIZE
-const PIERRE_DEFAULT_VIRTUAL_FILE_METRICS: VirtualFileMetrics = {
-  hunkLineCount: 50,
-  lineHeight: PIERRE_DEFAULT_LINE_HEIGHT,
-  diffHeaderHeight: 44,
-  spacing: 8
-}
 // Pierre's default themes define --diffs-dark-bg:#0a0a0a and
 // --diffs-light-bg:#ffffff; the outer scrollbar lives outside its shadow DOM.
 const PIERRE_DEFAULT_SCROLL_BACKGROUND = {
@@ -50,6 +47,7 @@ type PierreDiffTypographyStyle = React.CSSProperties & {
 }
 type PierreDiffScrollStyle = React.CSSProperties & {
   '--orca-pierre-diff-scroll-bg': string
+  '--diffs-scrollbar-gutter-override': '0px'
 }
 
 function fnv1a32(input: string, seed: number, multiplier: number): number {
@@ -100,43 +98,33 @@ export function buildPierreDiffFile({
   return file
 }
 
-export function getInitialPierreDiffScrollTop({
-  cachedScrollTop,
-  firstChangedLineIndex,
-  diffHeaderHeight,
-  lineHeight,
-  clientHeight
+export function getInitialPierreCodeViewScrollTarget({
+  cachedScrollTop
 }: {
   cachedScrollTop?: number
-  firstChangedLineIndex: number | null
-  diffHeaderHeight: number
-  lineHeight: number
-  clientHeight: number
-}): number | null {
+}): { type: 'position'; position: number; behavior: 'instant' } | null {
   if (typeof cachedScrollTop === 'number') {
-    return cachedScrollTop
-  }
-  if (firstChangedLineIndex == null) {
-    return null
-  }
-  return Math.max(0, diffHeaderHeight + firstChangedLineIndex * lineHeight - clientHeight / 2)
-}
-
-export function getFirstChangedRenderedLineIndex(
-  fileDiff: FileDiffMetadata,
-  diffStyle: 'split' | 'unified'
-): number | null {
-  for (const hunk of fileDiff.hunks) {
-    let offset = 0
-    for (const content of hunk.hunkContent) {
-      if (content.type === 'change' && (content.additions > 0 || content.deletions > 0)) {
-        return (diffStyle === 'split' ? hunk.splitLineStart : hunk.unifiedLineStart) + offset
-      }
-      offset +=
-        content.type === 'context' ? content.lines : Math.max(content.additions, content.deletions)
-    }
+    return { type: 'position', position: cachedScrollTop, behavior: 'instant' }
   }
   return null
+}
+
+export function getPierreCodeViewDiffIdentity({
+  fileDiff,
+  oldFile,
+  newFile
+}: {
+  fileDiff: FileDiffMetadata
+  oldFile: FileContents
+  newFile: FileContents
+}): string {
+  return [
+    fileDiff.cacheKey ?? '',
+    oldFile.cacheKey ?? `${oldFile.name}:${getContentFingerprint(oldFile.contents)}`,
+    newFile.cacheKey ?? `${newFile.name}:${getContentFingerprint(newFile.contents)}`,
+    fileDiff.prevName ?? '',
+    fileDiff.name
+  ].join(':')
 }
 
 function NoChangesView(): React.JSX.Element {
@@ -161,8 +149,10 @@ export default function DiffViewer({
   branchOldPath
 }: DiffViewerProps): React.JSX.Element {
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
-  const rootRef = useRef<HTMLDivElement | null>(null)
+  const codeViewRef = useRef<CodeViewHandle<undefined> | null>(null)
   const themeType = usePierreDiffThemeType()
+  const codeViewScrollElementRef = useRef<HTMLDivElement | null>(null)
+  const latestLogicalScrollTopRef = useRef<number | null>(null)
   const restoredScrollKeyRef = useRef<string | null>(null)
   const pendingScrollKeyRef = useRef<string | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -189,11 +179,8 @@ export default function DiffViewer({
   )
   const zoomedFontSize = computeEditorFontSize(PIERRE_DEFAULT_FONT_SIZE, editorFontZoomLevel)
   const zoomedLineHeight = Math.round(zoomedFontSize * PIERRE_DEFAULT_LINE_HEIGHT_RATIO)
-  const metrics = useMemo<VirtualFileMetrics>(
-    () => ({
-      ...PIERRE_DEFAULT_VIRTUAL_FILE_METRICS,
-      lineHeight: zoomedLineHeight
-    }),
+  const itemMetrics = useMemo<Partial<VirtualFileMetrics>>(
+    () => ({ lineHeight: zoomedLineHeight }),
     [zoomedLineHeight]
   )
   const typographyStyle = useMemo<PierreDiffTypographyStyle | undefined>(() => {
@@ -208,84 +195,116 @@ export default function DiffViewer({
   const scrollStyle = useMemo<PierreDiffScrollStyle>(
     () => ({
       colorScheme: themeType,
-      '--orca-pierre-diff-scroll-bg': PIERRE_DEFAULT_SCROLL_BACKGROUND[themeType]
+      '--orca-pierre-diff-scroll-bg': PIERRE_DEFAULT_SCROLL_BACKGROUND[themeType],
+      // Why: CodeView line-info separators expect Pierre's default scroll layout;
+      // zeroing the gutter hides the bottom bar without changing overflow.
+      '--diffs-scrollbar-gutter-override': '0px'
     }),
     [themeType]
   )
-  const firstChangedLineIndex = useMemo(
+  const diffIdentity = useMemo(
+    () => (fileDiff ? getPierreCodeViewDiffIdentity({ fileDiff, oldFile, newFile }) : null),
+    [fileDiff, newFile, oldFile]
+  )
+  const diffItemVersion = useMemo(
+    () => (diffIdentity ? fnv1a32(diffIdentity, FNV_OFFSET_BASIS_32, FNV_PRIME_32) : 0),
+    [diffIdentity]
+  )
+  const items = useMemo<CodeViewItem<undefined>[]>(
     () =>
       fileDiff
-        ? getFirstChangedRenderedLineIndex(fileDiff, sideBySide ? 'split' : 'unified')
-        : null,
-    [fileDiff, sideBySide]
+        ? [
+            {
+              id: PIERRE_CODE_VIEW_DIFF_ITEM_ID,
+              type: 'diff',
+              fileDiff,
+              version: diffItemVersion
+            }
+          ]
+        : [],
+    [diffItemVersion, fileDiff]
   )
   const initialScrollKey = fileDiff
-    ? `${modelKey}:${fileDiff.cacheKey ?? `${fileDiff.prevName ?? ''}:${fileDiff.name}`}:${sideBySide ? 'split' : 'unified'}:${metrics.lineHeight}`
+    ? `${modelKey}:${diffIdentity ?? ''}:${sideBySide ? 'split' : 'unified'}:${itemMetrics.lineHeight}`
     : null
 
-  const restoreInitialScroll = useCallback(
-    (node: HTMLElement): void => {
-      if (initialScrollKey == null || restoredScrollKeyRef.current === initialScrollKey) {
-        return
-      }
-      const root = rootRef.current ?? node.closest<HTMLElement>('.diff-editor')
-      const container = root?.querySelector<HTMLElement>('.pierre-diff-scroll')
-      if (!container) {
-        return
-      }
-      if (pendingScrollKeyRef.current === initialScrollKey) {
-        return
-      }
-      const cachedScrollTop = scrollTopCache.get(modelKey)
-      const targetScrollTop = getInitialPierreDiffScrollTop({
-        cachedScrollTop,
-        firstChangedLineIndex,
-        diffHeaderHeight: metrics.diffHeaderHeight,
-        lineHeight: metrics.lineHeight,
-        clientHeight: container.clientHeight
-      })
-      if (targetScrollTop == null) {
-        restoredScrollKeyRef.current = initialScrollKey
-        return
-      }
+  const setCodeViewHandle = useCallback((handle: CodeViewHandle<undefined> | null): void => {
+    codeViewRef.current = handle
+  }, [])
 
-      if (rafIdRef.current !== null) {
-        cancelAnimationFrame(rafIdRef.current)
-        rafIdRef.current = null
-      }
-      pendingScrollKeyRef.current = initialScrollKey
-      let attempt = 0
-      const applyScroll = (): void => {
-        rafIdRef.current = null
-        attempt += 1
-        const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight)
-        const nextScrollTop = Math.min(targetScrollTop, maxScrollTop)
-        container.scrollTop = nextScrollTop
-        const targetIsReachable = maxScrollTop >= targetScrollTop
-        const restored = Math.abs(container.scrollTop - targetScrollTop) <= 1
-        if (targetIsReachable || restored) {
-          restoredScrollKeyRef.current = initialScrollKey
-          pendingScrollKeyRef.current = null
-          return
+  const setCodeViewContainer = useCallback(
+    (element: HTMLDivElement | null): void => {
+      if (!element && codeViewScrollElementRef.current && initialScrollKey != null) {
+        // Why: Pierre cleans its instance up before detaching this ref, which
+        // collapses the root's DOM scrollTop to 0. Persist only a logical
+        // position observed via onScroll or applied by the cached restore, or
+        // a StrictMode/teardown detach would clobber the cache with 0.
+        const logicalScrollTop = latestLogicalScrollTopRef.current
+        if (logicalScrollTop != null) {
+          setWithLRU(scrollTopCache, modelKey, logicalScrollTop)
         }
-        if (attempt < 6) {
-          rafIdRef.current = requestAnimationFrame(applyScroll)
-          return
-        }
-        pendingScrollKeyRef.current = null
       }
-      rafIdRef.current = requestAnimationFrame(applyScroll)
+      if (element) {
+        latestLogicalScrollTopRef.current = null
+        // Why: a new container element means a fresh Pierre CodeView instance
+        // starting at scrollTop 0 (StrictMode remounts reattach refs), so the
+        // cached position must be restored again for this instance.
+        restoredScrollKeyRef.current = null
+      }
+      codeViewScrollElementRef.current = element
     },
-    [
-      firstChangedLineIndex,
-      initialScrollKey,
-      metrics.diffHeaderHeight,
-      metrics.lineHeight,
-      modelKey
-    ]
+    [initialScrollKey, modelKey]
   )
 
+  const restoreInitialScroll = useCallback((): boolean => {
+    if (initialScrollKey == null || restoredScrollKeyRef.current === initialScrollKey) {
+      return true
+    }
+    const codeView = codeViewRef.current
+    if (!codeView) {
+      return false
+    }
+    const target = getInitialPierreCodeViewScrollTarget({
+      cachedScrollTop: scrollTopCache.get(modelKey)
+    })
+    if (target == null) {
+      restoredScrollKeyRef.current = initialScrollKey
+      return true
+    }
+    codeView.scrollTo(target)
+    // Why: Pierre applies scrollTo on its next render frame and the DOM scroll
+    // event lands even later, so record the restored position now — a quick
+    // unmount would otherwise cache 0 from the not-yet-scrolled container.
+    latestLogicalScrollTopRef.current = target.position
+    restoredScrollKeyRef.current = initialScrollKey
+    return true
+  }, [initialScrollKey, modelKey])
+
   useEffect(() => {
+    if (initialScrollKey == null || restoredScrollKeyRef.current === initialScrollKey) {
+      return
+    }
+    if (pendingScrollKeyRef.current === initialScrollKey) {
+      return
+    }
+    let attempt = 0
+    const applyScroll = (): void => {
+      rafIdRef.current = null
+      attempt += 1
+      if (restoreInitialScroll()) {
+        pendingScrollKeyRef.current = null
+        return
+      }
+      if (attempt < 3) {
+        rafIdRef.current = requestAnimationFrame(applyScroll)
+        return
+      }
+      pendingScrollKeyRef.current = null
+    }
+    if (!restoreInitialScroll()) {
+      pendingScrollKeyRef.current = initialScrollKey
+      rafIdRef.current = requestAnimationFrame(applyScroll)
+    }
     return () => {
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current)
@@ -293,68 +312,60 @@ export default function DiffViewer({
       rafIdRef.current = null
       pendingScrollKeyRef.current = null
     }
-  }, [])
+  }, [initialScrollKey, restoreInitialScroll])
 
-  const options = useMemo<FileDiffOptions<undefined>>(
+  const options = useMemo<CodeViewOptions<undefined>>(
     () => ({
       diffStyle: sideBySide ? 'split' : 'unified',
-      // Why: Pierre's default line-info separator draws rounded cap pieces that
-      // artifact at the viewport edge in Orca's single-file pane.
-      hunkSeparators: 'line-info-basic',
+      hunkSeparators: 'line-info',
       theme: PIERRE_DIFF_THEMES,
       themeType,
       tokenizeMaxLineLength: 1_000,
-      onPostRender: (node, _instance, phase): void => {
-        if (phase === 'unmount') {
-          if (rafIdRef.current !== null) {
-            cancelAnimationFrame(rafIdRef.current)
-            rafIdRef.current = null
-          }
-          pendingScrollKeyRef.current = null
-          return
-        }
-        // Why: worker rendering can commit plain and highlighted DOM in stages;
-        // Pierre's callback is the first point where scroll height is meaningful.
-        restoreInitialScroll(node)
-      }
+      itemMetrics,
+      layout: { paddingTop: 0, paddingBottom: 0, gap: 0 }
     }),
-    [restoreInitialScroll, sideBySide, themeType]
+    [itemMetrics, sideBySide, themeType]
+  )
+
+  const handleCodeViewScroll = useCallback(
+    (scrollTop: number): void => {
+      latestLogicalScrollTopRef.current = scrollTop
+      setWithLRU(scrollTopCache, modelKey, scrollTop)
+    },
+    [modelKey]
   )
 
   useEffect(() => {
-    // Why: keep Orca's existing per-tab scroll cache while letting Pierre own
-    // virtualization inside the scroll root.
-    const container = rootRef.current?.querySelector<HTMLElement>('.pierre-diff-scroll')
-    if (!container) {
-      return
-    }
-    const handleScroll = (): void => {
-      setWithLRU(scrollTopCache, modelKey, container.scrollTop)
-    }
-    container.addEventListener('scroll', handleScroll, { passive: true })
     return () => {
-      container.removeEventListener('scroll', handleScroll)
-      setWithLRU(scrollTopCache, modelKey, container.scrollTop)
+      // Why: raw DOM scrollTop is unusable here — it is page-rebased for very
+      // large diffs and already collapsed to 0 once Pierre cleans up — so only
+      // a known logical position (onScroll or restore) is worth persisting.
+      const logicalScrollTop = latestLogicalScrollTopRef.current
+      if (
+        codeViewScrollElementRef.current &&
+        initialScrollKey != null &&
+        logicalScrollTop != null
+      ) {
+        setWithLRU(scrollTopCache, modelKey, logicalScrollTop)
+      }
     }
-  }, [modelKey])
+  }, [initialScrollKey, modelKey])
 
   if (!hasRenderableDiff || fileDiff == null) {
     return <NoChangesView />
   }
 
   return (
-    <div ref={rootRef} className="diff-editor h-full min-h-0 min-w-0" style={typographyStyle}>
-      <Virtualizer
-        className="pierre-diff-scroll h-full min-h-0 overflow-auto pierre-diff-scrollbar"
+    <div className="diff-editor h-full min-h-0 min-w-0" style={typographyStyle}>
+      <CodeView
+        ref={setCodeViewHandle}
+        containerRef={setCodeViewContainer}
+        items={items}
+        className="pierre-diff-scroll h-full min-h-0 overflow-y-auto overflow-x-hidden pierre-diff-scrollbar"
         style={scrollStyle}
-        contentClassName="min-h-full"
-        config={{
-          overscrollSize: 1_000,
-          intersectionObserverMargin: 4_000
-        }}
-      >
-        <FileDiff fileDiff={fileDiff} options={options} metrics={metrics} className="min-h-full" />
-      </Virtualizer>
+        options={options}
+        onScroll={handleCodeViewScroll}
+      />
     </div>
   )
 }
