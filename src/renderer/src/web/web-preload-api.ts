@@ -1380,11 +1380,15 @@ function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         worktree: toRuntimeWorktreeSelector(worktree.id)
       })
     },
-    diff: async ({ worktreePath, filePath, staged, compareAgainstHead }) => {
+    diff: async ({ worktreePath, filePath, oldPath, staged, compareAgainstHead }) => {
       const file = await resolveRuntimeFilePath(filePath, worktreePath)
       return callRuntimeResult('git.diff', {
         worktree: toRuntimeWorktreeSelector(file.worktree.id),
         filePath: file.relativePath,
+        // Why: oldPath is the pre-rename worktree-relative path (may not exist on
+        // disk), so forward it raw — resolving it as a file would drop the left
+        // side of rename diffs over the web/runtime-provider transport.
+        oldPath,
         staged,
         compareAgainstHead
       })

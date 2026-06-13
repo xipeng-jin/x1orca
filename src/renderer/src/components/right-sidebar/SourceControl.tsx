@@ -32,13 +32,18 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { useAppStore } from '@/store'
-import { resolveRemoteOperationErrorMessage } from '@/store/slices/editor'
+import { resolveRemoteOperationErrorMessage, type OpenFile } from '@/store/slices/editor'
 import { useActiveWorktree, useRepoById, useWorktreeMap } from '@/store/selectors'
 import { getHostedReviewCacheKey } from '@/store/slices/hosted-review'
 import { getGitHubPRCacheKey } from '@/store/slices/github-cache-key'
 import { detectLanguage } from '@/lib/language-detect'
-import { getWorkingTreeDiffOldPath } from '@/lib/git-diff-old-path-policy'
 import { basename, dirname, joinPath } from '@/lib/path'
+import {
+  buildSourceControlEntryDiffFetchInput,
+  scheduleSourceControlDiffHoverPrefetch,
+  startSourceControlDiffContentFetch,
+  type SourceControlDiffHoverPrefetch
+} from './source-control-diff-prefetch'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
 import { isFolderRepo } from '../../../../shared/repo-kind'
@@ -600,6 +605,7 @@ type SourceControlEntryOpenDiffDeps = {
     options?: { targetGroupId?: string; preview?: boolean }
   ) => void
   setEditorViewMode: (filePath: string, mode: 'edit' | 'changes') => void
+  startDiffContentFetch: (file: OpenFile) => void
 }
 
 export function openSourceControlEntryDiff({
@@ -612,7 +618,8 @@ export function openSourceControlEntryDiff({
   openConflictFile,
   openDiff,
   openFile,
-  setEditorViewMode
+  setEditorViewMode,
+  startDiffContentFetch
 }: SourceControlEntryOpenDiffDeps): void {
   if (!activeWorktreeId || !worktreePath) {
     return
@@ -655,16 +662,29 @@ export function openSourceControlEntryDiff({
     setEditorViewMode(filePath, 'changes')
     return
   }
-  const diffSource = entry.area === 'staged' ? 'staged' : 'unstaged'
-  openDiff(activeWorktreeId, filePath, entry.path, language, entry.area === 'staged', {
-    ...targetOptions,
-    oldPath: getWorkingTreeDiffOldPath({
-      oldPath: entry.oldPath,
-      diffSource,
-      diffStatus: entry.status
-    }),
-    diffStatus: entry.status
+  const diffFile = buildSourceControlEntryDiffFetchInput({
+    worktreeId: activeWorktreeId,
+    worktreePath,
+    entry
   })
+  if (!diffFile) {
+    return
+  }
+  // Why: start the git-diff RPC at click time so it overlaps React render and
+  // lazy-chunk load; the mount-effect fetch coalesces onto the same promise.
+  startDiffContentFetch(diffFile)
+  openDiff(
+    activeWorktreeId,
+    diffFile.filePath,
+    diffFile.relativePath,
+    language,
+    entry.area === 'staged',
+    {
+      ...targetOptions,
+      oldPath: diffFile.branchOldPath,
+      diffStatus: entry.status
+    }
+  )
 }
 type HostedReviewCreationState = {
   repoId: string
@@ -3878,7 +3898,8 @@ function SourceControlInner(): React.JSX.Element {
         openConflictFile,
         openDiff,
         openFile,
-        setEditorViewMode
+        setEditorViewMode,
+        startDiffContentFetch: startSourceControlDiffContentFetch
       })
     },
     [
@@ -7447,6 +7468,14 @@ const UncommittedEntryRow = React.memo(function UncommittedEntryRow({
   const canStage = isStageableStatusEntry(entry)
   const canUnstage = entry.area === 'staged'
 
+  const hoverPrefetchRef = useRef<SourceControlDiffHoverPrefetch | null>(null)
+  const cancelHoverPrefetch = useCallback(() => {
+    hoverPrefetchRef.current?.cancel()
+    hoverPrefetchRef.current = null
+  }, [])
+  // Why: a pending debounce must not fire after the row is gone.
+  useEffect(() => cancelHoverPrefetch, [cancelHoverPrefetch])
+
   return (
     <SourceControlEntryContextMenu
       currentWorktreeId={currentWorktreeId}
@@ -7489,6 +7518,17 @@ const UncommittedEntryRow = React.memo(function UncommittedEntryRow({
         onDoubleClick={(e) => {
           onOpen(entry, toPermanentSourceControlRowOpenEvent(e))
         }}
+        // Why: warm the git-diff RPC while the user hovers — on SSH the RPC is
+        // the longest pole, and a click then joins the in-flight read.
+        onPointerEnter={() => {
+          cancelHoverPrefetch()
+          hoverPrefetchRef.current = scheduleSourceControlDiffHoverPrefetch({
+            worktreeId: currentWorktreeId,
+            worktreePath,
+            entry
+          })
+        }}
+        onPointerLeave={cancelHoverPrefetch}
       >
         <FileIcon className="size-3.5 shrink-0" style={{ color: STATUS_COLORS[entry.status] }} />
         <div className="min-w-0 flex-1 text-xs">

@@ -1553,6 +1553,89 @@ describe('web git preload API', () => {
       { method: 'git.remoteCommitUrl', params: { worktree: 'id:wt-1', sha: TEST_COMMIT_OID } }
     ])
   })
+
+  it('forwards oldPath through git.diff so rename diffs keep the pre-rename side', async () => {
+    const runtimeCalls: { method: string; params: unknown }[] = []
+    const worktree = {
+      id: 'wt-1',
+      repoId: 'repo-1',
+      path: '/workspace/repo',
+      head: 'abc123',
+      branch: 'refs/heads/main',
+      isBare: false,
+      isMainWorktree: true,
+      displayName: 'repo',
+      comment: '',
+      linkedIssue: null,
+      linkedPR: null,
+      linkedLinearIssue: null,
+      linkedGitLabMR: null,
+      linkedGitLabIssue: null,
+      isArchived: false,
+      isUnread: false,
+      isPinned: false,
+      sortOrder: 0,
+      lastActivityAt: 0,
+      workspaceStatus: 'todo'
+    }
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params?: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          runtimeCalls.push({ method, params })
+          if (method === 'repo.list') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: { repos: [{ id: 'repo-1' }] },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          if (method === 'worktree.detectedList') {
+            return Promise.resolve({
+              id: `call-${runtimeCalls.length}`,
+              ok: true,
+              result: { repoId: 'repo-1', authoritative: true, worktrees: [worktree] },
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
+          return Promise.resolve({
+            id: `call-${runtimeCalls.length}`,
+            ok: true,
+            result: {
+              kind: 'text',
+              originalContent: 'old',
+              modifiedContent: 'new',
+              originalIsBinary: false,
+              modifiedIsBinary: false
+            },
+            _meta: { runtimeId: 'runtime-1' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage)
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await globals.window.api.git.diff({
+      worktreePath: '/workspace/repo',
+      filePath: '/workspace/repo/src/new-name.ts',
+      oldPath: 'src/old-name.ts',
+      staged: true
+    })
+
+    const diffCall = runtimeCalls.find((call) => call.method === 'git.diff')
+    expect(diffCall?.params).toMatchObject({
+      worktree: 'id:wt-1',
+      filePath: 'src/new-name.ts',
+      oldPath: 'src/old-name.ts',
+      staged: true
+    })
+  })
 })
 
 describe('web GitHub preload API', () => {

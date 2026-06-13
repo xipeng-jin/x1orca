@@ -530,6 +530,40 @@ describe('GitHandler', () => {
       )
     })
 
+    it('diffs staged renames against the pre-rename path via oldPath', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'old-name.txt'), 'original')
+      gitCommit(tmpDir, 'initial')
+      execFileSync('git', ['mv', 'old-name.txt', 'new-name.txt'], { cwd: tmpDir, stdio: 'pipe' })
+      writeFileSync(path.join(tmpDir, 'new-name.txt'), 'renamed-content')
+      execFileSync('git', ['add', 'new-name.txt'], { cwd: tmpDir, stdio: 'pipe' })
+
+      const result = (await dispatcher.callRequest('git.diff', {
+        worktreePath: tmpDir,
+        filePath: 'new-name.txt',
+        oldPath: 'old-name.txt',
+        staged: true
+      })) as { kind: string; originalContent: string; modifiedContent: string }
+      expect(result.kind).toBe('text')
+      expect(result.originalContent).toBe('original')
+      expect(result.modifiedContent).toBe('renamed-content')
+    })
+
+    it('rejects oldPath values that traverse outside the worktree', async () => {
+      gitInit(tmpDir)
+      writeFileSync(path.join(tmpDir, 'file.txt'), 'content')
+      gitCommit(tmpDir, 'initial')
+
+      await expect(
+        dispatcher.callRequest('git.diff', {
+          worktreePath: tmpDir,
+          filePath: 'file.txt',
+          oldPath: '../outside.txt',
+          staged: true
+        })
+      ).rejects.toThrow('outside the worktree')
+    })
+
     it('returns diff for tracked files in valid dot-dot-prefixed directories', async () => {
       gitInit(tmpDir)
       mkdirSync(path.join(tmpDir, '..fixtures'))

@@ -164,19 +164,24 @@ export class GitHandler {
   private async getDiff(params: Record<string, unknown>) {
     const worktreePath = params.worktreePath as string
     const filePath = params.filePath as string
+    const oldPath = typeof params.oldPath === 'string' ? params.oldPath : undefined
     // Why: filePath is relative to worktreePath and used in readWorkingFile via
-    // path.join. Without validation, ../../etc/passwd traverses outside the worktree.
-    const resolved = path.resolve(worktreePath, filePath)
-    const rel = path.relative(path.resolve(worktreePath), resolved)
-    if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
-      throw new Error(`Path "${filePath}" resolves outside the worktree`)
+    // path.join. Without validation, ../../etc/passwd traverses outside the
+    // worktree. oldPath only reaches `git show`, but hold it to the same bound.
+    for (const candidate of oldPath ? [filePath, oldPath] : [filePath]) {
+      const resolved = path.resolve(worktreePath, candidate)
+      const rel = path.relative(path.resolve(worktreePath), resolved)
+      if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+        throw new Error(`Path "${candidate}" resolves outside the worktree`)
+      }
     }
     return computeDiff(
       this.gitBuffer.bind(this),
       worktreePath,
       filePath,
       params.staged as boolean,
-      params.compareAgainstHead as boolean | undefined
+      params.compareAgainstHead as boolean | undefined,
+      oldPath
     )
   }
 

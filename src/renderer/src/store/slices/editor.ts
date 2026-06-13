@@ -892,7 +892,9 @@ function buildOwnedEditorFileId(
   return `editor:${encodeURIComponent(worktreeId)}:${encodeURIComponent(runtimeKey)}:${encodeURIComponent(filePath)}`
 }
 
-function buildDiffEditorFileId(
+// Why: exported so click/hover prefetch can address the same diff tab identity
+// the store builds, without duplicating the id scheme.
+export function buildDiffEditorFileId(
   worktreeId: string,
   diffSource: DiffSource,
   relativePath: string,

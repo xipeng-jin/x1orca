@@ -17,6 +17,7 @@ describe('openSourceControlEntryDiff', () => {
     const openConflictFile = vi.fn()
     const openFile = vi.fn()
     const setEditorViewMode = vi.fn()
+    const startDiffContentFetch = vi.fn()
 
     openSourceControlEntryDiff({
       activeWorktreeId: 'wt-1',
@@ -26,7 +27,8 @@ describe('openSourceControlEntryDiff', () => {
       openConflictFile,
       openDiff,
       openFile,
-      setEditorViewMode
+      setEditorViewMode,
+      startDiffContentFetch
     })
 
     expect(openFile).toHaveBeenCalledWith(
@@ -42,12 +44,14 @@ describe('openSourceControlEntryDiff', () => {
     expect(setEditorViewMode).toHaveBeenCalledWith('/repo/docs/readme.md', 'changes')
     expect(openDiff).not.toHaveBeenCalled()
     expect(openConflictFile).not.toHaveBeenCalled()
+    expect(startDiffContentFetch).not.toHaveBeenCalled()
   })
 
   it('keeps unresolved conflicts on the conflict review path', () => {
     const openDiff = vi.fn()
     const openConflictFile = vi.fn()
     const trackConflictPath = vi.fn()
+    const startDiffContentFetch = vi.fn()
     const conflict = entry({
       conflictKind: 'both_modified',
       conflictStatus: 'unresolved',
@@ -62,16 +66,19 @@ describe('openSourceControlEntryDiff', () => {
       openConflictFile,
       openDiff,
       openFile: vi.fn(),
-      setEditorViewMode: vi.fn()
+      setEditorViewMode: vi.fn(),
+      startDiffContentFetch
     })
 
     expect(trackConflictPath).toHaveBeenCalledWith('wt-1', 'docs/readme.md', 'both_modified')
     expect(openConflictFile).toHaveBeenCalledWith('wt-1', '/repo', conflict, 'markdown', undefined)
     expect(openDiff).not.toHaveBeenCalled()
+    expect(startDiffContentFetch).not.toHaveBeenCalled()
   })
 
   it('passes oldPath when opening renamed working-tree diff tabs', () => {
     const openDiff = vi.fn()
+    const startDiffContentFetch = vi.fn()
 
     openSourceControlEntryDiff({
       activeWorktreeId: 'wt-1',
@@ -86,7 +93,8 @@ describe('openSourceControlEntryDiff', () => {
       openConflictFile: vi.fn(),
       openDiff,
       openFile: vi.fn(),
-      setEditorViewMode: vi.fn()
+      setEditorViewMode: vi.fn(),
+      startDiffContentFetch
     })
 
     expect(openDiff).toHaveBeenCalledWith(
@@ -115,7 +123,8 @@ describe('openSourceControlEntryDiff', () => {
       openConflictFile: vi.fn(),
       openDiff,
       openFile: vi.fn(),
-      setEditorViewMode: vi.fn()
+      setEditorViewMode: vi.fn(),
+      startDiffContentFetch: vi.fn()
     })
 
     expect(openDiff).toHaveBeenCalledWith(
@@ -144,7 +153,8 @@ describe('openSourceControlEntryDiff', () => {
       openConflictFile: vi.fn(),
       openDiff,
       openFile: vi.fn(),
-      setEditorViewMode: vi.fn()
+      setEditorViewMode: vi.fn(),
+      startDiffContentFetch: vi.fn()
     })
 
     expect(openDiff).toHaveBeenCalledWith(
@@ -155,5 +165,49 @@ describe('openSourceControlEntryDiff', () => {
       false,
       { oldPath: 'src/old-name.ts', diffStatus: 'renamed' }
     )
+  })
+
+  it('starts the click-time diff fetch with the same inputs openDiff receives', () => {
+    const openDiff = vi.fn()
+    const startDiffContentFetch = vi.fn()
+
+    openSourceControlEntryDiff({
+      activeWorktreeId: 'wt-1',
+      worktreePath: '/repo',
+      entry: entry({
+        path: 'src/new-name.ts',
+        oldPath: 'src/old-name.ts',
+        status: 'renamed',
+        area: 'staged'
+      }),
+      trackConflictPath: vi.fn(),
+      openConflictFile: vi.fn(),
+      openDiff,
+      openFile: vi.fn(),
+      setEditorViewMode: vi.fn(),
+      startDiffContentFetch
+    })
+
+    expect(startDiffContentFetch).toHaveBeenCalledTimes(1)
+    const fetched = startDiffContentFetch.mock.calls[0][0]
+    expect(fetched).toMatchObject({
+      filePath: '/repo/src/new-name.ts',
+      relativePath: 'src/new-name.ts',
+      worktreeId: 'wt-1',
+      mode: 'diff',
+      diffSource: 'staged',
+      diffStatus: 'renamed',
+      branchOldPath: 'src/old-name.ts'
+    })
+    // The fetch starts before the tab opens so the RPC overlaps rendering.
+    expect(startDiffContentFetch.mock.invocationCallOrder[0]).toBeLessThan(
+      openDiff.mock.invocationCallOrder[0]
+    )
+    const [, filePath, relativePath, , staged, options] = openDiff.mock.calls[0]
+    expect(fetched.filePath).toBe(filePath)
+    expect(fetched.relativePath).toBe(relativePath)
+    expect(fetched.diffSource).toBe(staged ? 'staged' : 'unstaged')
+    expect(fetched.branchOldPath).toBe(options.oldPath)
+    expect(fetched.diffStatus).toBe(options.diffStatus)
   })
 })

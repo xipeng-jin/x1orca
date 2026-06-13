@@ -71,7 +71,9 @@ import {
   detectConflictOperation,
   discardChanges,
   getBranchCompare,
+  getBranchDiff,
   getCommitCompare,
+  getCommitDiff,
   getDiff,
   getStagedCommitContext,
   getStatus,
@@ -480,6 +482,245 @@ describe('getDiff', () => {
       modifiedIsBinary: true,
       isImage: true,
       mimeType: 'application/pdf'
+    })
+  })
+
+  it('starts both blob reads before either resolves (staged)', async () => {
+    let resolveLeft!: (value: { stdout: Buffer }) => void
+    let resolveRight!: (value: { stdout: Buffer }) => void
+    gitExecFileAsyncBufferMock
+      .mockImplementationOnce(() => new Promise((res) => (resolveLeft = res)))
+      .mockImplementationOnce(() => new Promise((res) => (resolveRight = res)))
+
+    const pending = getDiff('/repo', 'src/file.ts', true)
+    // Both reads issued while neither has settled — the sequential version
+    // would only have issued the HEAD read at this point.
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledTimes(2)
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      1,
+      ['show', '--end-of-options', 'HEAD:src/file.ts'],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(2, ['show', ':src/file.ts'], {
+      cwd: '/repo',
+      maxBuffer: 10 * 1024 * 1024
+    })
+
+    // Right resolving first must not reorder the sides.
+    resolveRight({ stdout: Buffer.from('index-content\n') })
+    resolveLeft({ stdout: Buffer.from('head-content\n') })
+    await expect(pending).resolves.toEqual({
+      kind: 'text',
+      originalContent: 'head-content\n',
+      modifiedContent: 'index-content\n',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+
+  it('reads working-tree-vs-HEAD concurrently for compareAgainstHead diffs', async () => {
+    let resolveLeft!: (value: { stdout: Buffer }) => void
+    gitExecFileAsyncBufferMock.mockImplementationOnce(
+      () => new Promise((res) => (resolveLeft = res))
+    )
+    readFileMock.mockResolvedValue(Buffer.from('working-tree-content'))
+
+    const pending = getDiff('/repo', 'src/file.ts', false, true)
+
+    // Edit-mode diffs the working tree against HEAD: the left side is HEAD (not
+    // the index), and the working-tree read starts before the HEAD read settles.
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledTimes(1)
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledWith(
+      ['show', '--end-of-options', 'HEAD:src/file.ts'],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+    expect(statMock).toHaveBeenCalledWith(path.join('/repo', 'src/file.ts'))
+
+    resolveLeft({ stdout: Buffer.from('head-content\n') })
+    await expect(pending).resolves.toEqual({
+      kind: 'text',
+      originalContent: 'head-content\n',
+      modifiedContent: 'working-tree-content',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+
+  it('returns the empty fallback without rejecting when both reads fail', async () => {
+    gitExecFileAsyncBufferMock.mockRejectedValue(new Error('git unavailable'))
+    statMock.mockRejectedValue(new Error('fs unavailable'))
+
+    await expect(getDiff('/repo', 'src/file.ts', false)).resolves.toEqual({
+      kind: 'text',
+      originalContent: '',
+      modifiedContent: '',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+})
+
+describe('getBranchDiff', () => {
+  const MERGE_BASE = 'a'.repeat(40)
+  const HEAD_OID = 'b'.repeat(40)
+
+  beforeEach(() => {
+    gitExecFileAsyncBufferMock.mockReset()
+  })
+
+  it('reads both committed blobs concurrently and honors rename oldPath', async () => {
+    let resolveLeft!: (value: { stdout: Buffer }) => void
+    let resolveRight!: (value: { stdout: Buffer }) => void
+    gitExecFileAsyncBufferMock
+      .mockImplementationOnce(() => new Promise((res) => (resolveLeft = res)))
+      .mockImplementationOnce(() => new Promise((res) => (resolveRight = res)))
+
+    const pending = getBranchDiff('/repo', {
+      headOid: HEAD_OID,
+      mergeBase: MERGE_BASE,
+      filePath: 'src/new-name.ts',
+      oldPath: 'src/old-name.ts'
+    })
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledTimes(2)
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      1,
+      ['show', '--end-of-options', `${MERGE_BASE}:src/old-name.ts`],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      2,
+      ['show', '--end-of-options', `${HEAD_OID}:src/new-name.ts`],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+
+    resolveRight({ stdout: Buffer.from('head-content\n') })
+    resolveLeft({ stdout: Buffer.from('base-content\n') })
+    await expect(pending).resolves.toEqual({
+      kind: 'text',
+      originalContent: 'base-content\n',
+      modifiedContent: 'head-content\n',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+
+  it('marks binary blobs', async () => {
+    gitExecFileAsyncBufferMock
+      .mockResolvedValueOnce({ stdout: Buffer.from([0x00, 0x61]) })
+      .mockResolvedValueOnce({ stdout: Buffer.from('text\n') })
+
+    const result = await getBranchDiff('/repo', {
+      headOid: HEAD_OID,
+      mergeBase: MERGE_BASE,
+      filePath: 'assets/logo.bin'
+    })
+
+    expect(result.kind).toBe('binary')
+    expect(result.originalIsBinary).toBe(true)
+    expect(result.modifiedIsBinary).toBe(false)
+  })
+
+  it('returns the empty fallback without rejecting when blob reads fail', async () => {
+    gitExecFileAsyncBufferMock.mockRejectedValue(new Error('git unavailable'))
+
+    await expect(
+      getBranchDiff('/repo', {
+        headOid: HEAD_OID,
+        mergeBase: MERGE_BASE,
+        filePath: 'src/file.ts'
+      })
+    ).resolves.toEqual({
+      kind: 'text',
+      originalContent: '',
+      modifiedContent: '',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+})
+
+describe('getCommitDiff', () => {
+  const COMMIT_OID = 'c'.repeat(40)
+  const PARENT_OID = 'd'.repeat(40)
+
+  beforeEach(() => {
+    gitExecFileAsyncBufferMock.mockReset()
+  })
+
+  it('reads both committed blobs concurrently and honors rename oldPath', async () => {
+    let resolveLeft!: (value: { stdout: Buffer }) => void
+    let resolveRight!: (value: { stdout: Buffer }) => void
+    gitExecFileAsyncBufferMock
+      .mockImplementationOnce(() => new Promise((res) => (resolveLeft = res)))
+      .mockImplementationOnce(() => new Promise((res) => (resolveRight = res)))
+
+    const pending = getCommitDiff('/repo', {
+      commitOid: COMMIT_OID,
+      parentOid: PARENT_OID,
+      filePath: 'src/new-name.ts',
+      oldPath: 'src/old-name.ts'
+    })
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledTimes(2)
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      1,
+      ['show', '--end-of-options', `${PARENT_OID}:src/old-name.ts`],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+    expect(gitExecFileAsyncBufferMock).toHaveBeenNthCalledWith(
+      2,
+      ['show', '--end-of-options', `${COMMIT_OID}:src/new-name.ts`],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+
+    resolveRight({ stdout: Buffer.from('commit-content\n') })
+    resolveLeft({ stdout: Buffer.from('parent-content\n') })
+    await expect(pending).resolves.toEqual({
+      kind: 'text',
+      originalContent: 'parent-content\n',
+      modifiedContent: 'commit-content\n',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+
+  it('uses an empty left side for root commits without reading a parent blob', async () => {
+    gitExecFileAsyncBufferMock.mockResolvedValueOnce({ stdout: Buffer.from('initial\n') })
+
+    const result = await getCommitDiff('/repo', {
+      commitOid: COMMIT_OID,
+      parentOid: null,
+      filePath: 'src/file.ts'
+    })
+
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledTimes(1)
+    expect(gitExecFileAsyncBufferMock).toHaveBeenCalledWith(
+      ['show', '--end-of-options', `${COMMIT_OID}:src/file.ts`],
+      { cwd: '/repo', maxBuffer: 10 * 1024 * 1024 }
+    )
+    expect(result).toEqual({
+      kind: 'text',
+      originalContent: '',
+      modifiedContent: 'initial\n',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+  })
+
+  it('returns the empty fallback without rejecting when blob reads fail', async () => {
+    gitExecFileAsyncBufferMock.mockRejectedValue(new Error('git unavailable'))
+
+    await expect(
+      getCommitDiff('/repo', {
+        commitOid: COMMIT_OID,
+        parentOid: PARENT_OID,
+        filePath: 'src/file.ts'
+      })
+    ).resolves.toEqual({
+      kind: 'text',
+      originalContent: '',
+      modifiedContent: '',
+      originalIsBinary: false,
+      modifiedIsBinary: false
     })
   })
 })

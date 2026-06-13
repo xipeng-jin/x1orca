@@ -79,7 +79,8 @@ export async function computeDiff(
   worktreePath: string,
   filePath: string,
   staged: boolean,
-  compareAgainstHead = false
+  compareAgainstHead = false,
+  oldPath?: string
 ) {
   let originalContent = ''
   let modifiedContent = ''
@@ -87,25 +88,30 @@ export async function computeDiff(
   let modifiedIsBinary = false
 
   try {
-    if (staged) {
-      const left = await readBlobAtOid(git, worktreePath, 'HEAD', filePath)
-      originalContent = left.content
-      originalIsBinary = left.isBinary
+    // Why: renames diff the pre-rename path on the left, matching local getDiff.
+    const leftPath = oldPath ?? filePath
+    // Why: the two sides are independent, so start both reads at once instead
+    // of serializing two git/filesystem round-trips per diff.
+    const leftPromise = staged
+      ? readBlobAtOid(git, worktreePath, 'HEAD', leftPath)
+      : compareAgainstHead
+        ? readBlobAtOid(git, worktreePath, 'HEAD', leftPath)
+        : readUnstagedLeft(git, worktreePath, leftPath)
+    const rightPromise = staged
+      ? readBlobAtIndex(git, worktreePath, filePath)
+      : readWorkingDiffFile(path.join(worktreePath, filePath))
+    // Why: awaiting left first preserves the left-only fallback when the right
+    // read fails; this guard keeps a left failure from orphaning the right
+    // promise as an unhandled rejection.
+    void rightPromise.catch(() => undefined)
 
-      const right = await readBlobAtIndex(git, worktreePath, filePath)
-      modifiedContent = right.content
-      modifiedIsBinary = right.isBinary
-    } else {
-      const left = compareAgainstHead
-        ? await readBlobAtOid(git, worktreePath, 'HEAD', filePath)
-        : await readUnstagedLeft(git, worktreePath, filePath)
-      originalContent = left.content
-      originalIsBinary = left.isBinary
+    const left = await leftPromise
+    originalContent = left.content
+    originalIsBinary = left.isBinary
 
-      const right = await readWorkingDiffFile(path.join(worktreePath, filePath))
-      modifiedContent = right.content
-      modifiedIsBinary = right.isBinary
-    }
+    const right = await rightPromise
+    modifiedContent = right.content
+    modifiedIsBinary = right.isBinary
   } catch {
     // Fallback to empty
   }
@@ -271,8 +277,11 @@ export async function branchDiffEntries(
     const fp = change.path as string
     const oldP = (change.oldPath as string) ?? fp
     try {
-      const left = await readBlobAtOid(gitBuffer, worktreePath, mergeBase, oldP)
-      const right = await readBlobAtOid(gitBuffer, worktreePath, headOid, fp)
+      // Why: both sides are independent committed blobs; read them together.
+      const [left, right] = await Promise.all([
+        readBlobAtOid(gitBuffer, worktreePath, mergeBase, oldP),
+        readBlobAtOid(gitBuffer, worktreePath, headOid, fp)
+      ])
       results.push(buildDiffResult(left.content, right.content, left.isBinary, right.isBinary, fp))
     } catch {
       results.push({

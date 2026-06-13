@@ -1,12 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenFile } from '@/store/slices/editor'
 import { getRuntimeGitDiff } from '@/runtime/runtime-git-client'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
-import { fetchEditorDiffContent, fetchEditorFileContent } from './editor-content-fetch'
+import {
+  fetchEditorDiffContent,
+  fetchEditorFileContent,
+  resetEditorDiffClickHandoffForTests
+} from './editor-content-fetch'
+
+// Why: the handoff key embeds this per-file status signature; tests mutate it to
+// prove a worktree change between a settled click and the mount invalidates it.
+const mockGitStatusByWorktree: Record<
+  string,
+  { path: string; area: string; status: string; conflictStatus?: string }[]
+> = {}
 
 vi.mock('@/store', () => ({
-  useAppStore: { getState: () => ({ settings: null }) }
+  useAppStore: {
+    getState: () => ({ settings: null, gitStatusByWorktree: mockGitStatusByWorktree })
+  }
 }))
 vi.mock('@/lib/connection-context', () => ({
   getConnectionId: () => null
@@ -74,6 +87,13 @@ function diffTab(relativePath: string, overrides: Partial<OpenFile> = {}): OpenF
 
 beforeEach(() => {
   vi.clearAllMocks()
+  for (const key of Object.keys(mockGitStatusByWorktree)) {
+    delete mockGitStatusByWorktree[key]
+  }
+})
+
+afterEach(() => {
+  resetEditorDiffClickHandoffForTests()
 })
 
 describe('fetchEditorDiffContent', () => {
@@ -140,6 +160,128 @@ describe('fetchEditorDiffContent', () => {
 
     await expect(fetchEditorDiffContent(file)).rejects.toThrow('boom')
     await expect(fetchEditorDiffContent(file)).resolves.toBe(result)
+    expect(gitDiffMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('hands a settled click-open result to the next real read (one-shot)', async () => {
+    const result = diffResult('warm')
+    gitDiffMock
+      .mockReturnValueOnce(Promise.resolve(result))
+      .mockReturnValueOnce(Promise.resolve(diffResult('fresh')))
+    const file = diffTab('src/retained.ts')
+
+    // The click-open RPC settles before the tab's mount effect arrives.
+    await expect(fetchEditorDiffContent(file, { prefetch: 'click-open' })).resolves.toBe(result)
+
+    // The late mount-effect read consumes the handoff — no second RPC.
+    await expect(fetchEditorDiffContent(file)).resolves.toBe(result)
+    expect(gitDiffMock).toHaveBeenCalledTimes(1)
+
+    // Consumption is one-shot: the next read goes back to the RPC.
+    await expect(fetchEditorDiffContent(file)).resolves.toEqual(diffResult('fresh'))
+    expect(gitDiffMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('never retains settled hover reads — hover only shares in-flight RPCs', async () => {
+    gitDiffMock
+      .mockReturnValueOnce(Promise.resolve(diffResult('speculative')))
+      .mockReturnValueOnce(Promise.resolve(diffResult('fresh')))
+    const file = diffTab('src/hover-settled.ts')
+
+    await expect(fetchEditorDiffContent(file, { prefetch: 'hover' })).resolves.toEqual(
+      diffResult('speculative')
+    )
+
+    // The file may have changed since the hover; a real read must refetch.
+    await expect(fetchEditorDiffContent(file)).resolves.toEqual(diffResult('fresh'))
+    expect(gitDiffMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('upgrades a hover-started read to a handoff when a click-open joins it', async () => {
+    const rpc = deferred<DiffContent>()
+    gitDiffMock.mockReturnValueOnce(rpc.promise)
+    const file = diffTab('src/hover-upgraded.ts')
+
+    void fetchEditorDiffContent(file, { prefetch: 'hover' })
+    void fetchEditorDiffContent(file, { prefetch: 'click-open' })
+    const result = diffResult('warm')
+    rpc.resolve(result)
+    await rpc.promise
+
+    // The click made the open imminent, so the settled result reaches the
+    // mount-effect read without a second RPC.
+    await expect(fetchEditorDiffContent(file)).resolves.toBe(result)
+    expect(gitDiffMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retain a click-open result a real caller already joined in flight', async () => {
+    const rpc = deferred<DiffContent>()
+    gitDiffMock
+      .mockReturnValueOnce(rpc.promise)
+      .mockReturnValueOnce(Promise.resolve(diffResult('fresh')))
+    const file = diffTab('src/joined.ts')
+
+    void fetchEditorDiffContent(file, { prefetch: 'click-open' })
+    const joined = fetchEditorDiffContent(file)
+    const result = diffResult('warm')
+    rpc.resolve(result)
+    await expect(joined).resolves.toBe(result)
+
+    // The join already delivered the result to the store-writing caller, so
+    // nothing is retained and the next read issues a fresh RPC.
+    await expect(fetchEditorDiffContent(file)).resolves.toEqual(diffResult('fresh'))
+    expect(gitDiffMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('force bypasses and drops a click-open handoff', async () => {
+    gitDiffMock
+      .mockReturnValueOnce(Promise.resolve(diffResult('stale')))
+      .mockReturnValueOnce(Promise.resolve(diffResult('forced')))
+      .mockReturnValueOnce(Promise.resolve(diffResult('after')))
+    const file = diffTab('src/force-retained.ts')
+
+    await expect(fetchEditorDiffContent(file, { prefetch: 'click-open' })).resolves.toEqual(
+      diffResult('stale')
+    )
+    await expect(fetchEditorDiffContent(file, { force: true })).resolves.toEqual(
+      diffResult('forced')
+    )
+    await expect(fetchEditorDiffContent(file)).resolves.toEqual(diffResult('after'))
+    expect(gitDiffMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retain rejected click-open reads', async () => {
+    const result = diffResult('recovered')
+    gitDiffMock
+      .mockImplementationOnce(() => Promise.reject(new Error('boom')))
+      .mockReturnValueOnce(Promise.resolve(result))
+    const file = diffTab('src/prefetch-rejected.ts')
+
+    await expect(fetchEditorDiffContent(file, { prefetch: 'click-open' })).rejects.toThrow('boom')
+    await expect(fetchEditorDiffContent(file)).resolves.toBe(result)
+    expect(gitDiffMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates a click-open handoff when the file git status changes', async () => {
+    gitDiffMock
+      .mockReturnValueOnce(Promise.resolve(diffResult('warm')))
+      .mockReturnValueOnce(Promise.resolve(diffResult('fresh')))
+    const file = diffTab('src/changed.ts')
+    mockGitStatusByWorktree['wt-1'] = [
+      { path: 'src/changed.ts', area: 'unstaged', status: 'modified' }
+    ]
+
+    // Click-open settles and is retained under the current status signature.
+    await expect(fetchEditorDiffContent(file, { prefetch: 'click-open' })).resolves.toEqual(
+      diffResult('warm')
+    )
+
+    // The worktree changes before the mount, so the handoff key no longer
+    // matches and the mount-effect read refetches instead of serving the stale result.
+    mockGitStatusByWorktree['wt-1'] = [
+      { path: 'src/changed.ts', area: 'unstaged', status: 'deleted' }
+    ]
+    await expect(fetchEditorDiffContent(file)).resolves.toEqual(diffResult('fresh'))
     expect(gitDiffMock).toHaveBeenCalledTimes(2)
   })
 

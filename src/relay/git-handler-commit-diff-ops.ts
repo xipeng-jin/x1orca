@@ -136,10 +136,13 @@ export async function commitDiffEntry(
   }
   try {
     const oldPath = args.oldPath ?? args.filePath
-    const left = args.parentOid
-      ? await readBlobAtOid(gitBuffer, worktreePath, args.parentOid, oldPath)
-      : { content: '', isBinary: false }
-    const right = await readBlobAtOid(gitBuffer, worktreePath, args.commitOid, args.filePath)
+    // Why: both sides are independent committed blobs; read them together.
+    const [left, right] = await Promise.all([
+      args.parentOid
+        ? readBlobAtOid(gitBuffer, worktreePath, args.parentOid, oldPath)
+        : Promise.resolve({ content: '', isBinary: false }),
+      readBlobAtOid(gitBuffer, worktreePath, args.commitOid, args.filePath)
+    ])
     return buildDiffResult(
       left.content,
       right.content,

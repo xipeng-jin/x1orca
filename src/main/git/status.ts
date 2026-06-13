@@ -591,23 +591,28 @@ export async function getDiff(
 
   try {
     const leftPath = options.oldPath ?? filePath
-    const leftBlob = staged
-      ? await readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
+    // Why: the two sides are independent, so start both reads at once instead
+    // of serializing two git/filesystem round-trips per diff.
+    const leftBlobPromise = staged
+      ? readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
       : compareAgainstHead
-        ? await readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
-        : await readUnstagedLeftBlob(worktreePath, leftPath, options)
+        ? readGitBlobAtOidPath(worktreePath, 'HEAD', leftPath, options)
+        : readUnstagedLeftBlob(worktreePath, leftPath, options)
+    const rightBlobPromise = staged
+      ? readGitBlobAtIndexPath(worktreePath, filePath, options)
+      : readWorkingTreeFile(path.join(worktreePath, filePath))
+    // Why: awaiting left first preserves the left-only fallback when the right
+    // read fails; this guard keeps a left failure from orphaning the right
+    // promise as an unhandled rejection.
+    void rightBlobPromise.catch(() => undefined)
+
+    const leftBlob = await leftBlobPromise
     originalContent = leftBlob.content
     originalIsBinary = leftBlob.isBinary
 
-    if (staged) {
-      const rightBlob = await readGitBlobAtIndexPath(worktreePath, filePath, options)
-      modifiedContent = rightBlob.content
-      modifiedIsBinary = rightBlob.isBinary
-    } else {
-      const workingTreeBlob = await readWorkingTreeFile(path.join(worktreePath, filePath))
-      modifiedContent = workingTreeBlob.content
-      modifiedIsBinary = workingTreeBlob.isBinary
-    }
+    const rightBlob = await rightBlobPromise
+    modifiedContent = rightBlob.content
+    modifiedIsBinary = rightBlob.isBinary
   } catch {
     // Fallback
   }
@@ -717,8 +722,11 @@ export async function getBranchDiff(
 ): Promise<GitDiffResult> {
   try {
     const leftPath = args.oldPath ?? args.filePath
-    const leftBlob = await readGitBlobAtOidPath(worktreePath, args.mergeBase, leftPath, options)
-    const rightBlob = await readGitBlobAtOidPath(worktreePath, args.headOid, args.filePath, options)
+    // Why: both sides are independent committed blobs; read them together.
+    const [leftBlob, rightBlob] = await Promise.all([
+      readGitBlobAtOidPath(worktreePath, args.mergeBase, leftPath, options),
+      readGitBlobAtOidPath(worktreePath, args.headOid, args.filePath, options)
+    ])
 
     return buildDiffResult(
       leftBlob.content,
@@ -806,15 +814,13 @@ export async function getCommitDiff(
 ): Promise<GitDiffResult> {
   try {
     const leftPath = args.oldPath ?? args.filePath
-    const leftBlob = args.parentOid
-      ? await readGitBlobAtOidPath(worktreePath, args.parentOid, leftPath, options)
-      : { content: '', isBinary: false }
-    const rightBlob = await readGitBlobAtOidPath(
-      worktreePath,
-      args.commitOid,
-      args.filePath,
-      options
-    )
+    // Why: both sides are independent committed blobs; read them together.
+    const [leftBlob, rightBlob] = await Promise.all([
+      args.parentOid
+        ? readGitBlobAtOidPath(worktreePath, args.parentOid, leftPath, options)
+        : Promise.resolve({ content: '', isBinary: false }),
+      readGitBlobAtOidPath(worktreePath, args.commitOid, args.filePath, options)
+    ])
 
     return buildDiffResult(
       leftBlob.content,
