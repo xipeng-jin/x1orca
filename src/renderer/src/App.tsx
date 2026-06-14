@@ -56,6 +56,7 @@ import { ZoomOverlay } from './components/ZoomOverlay'
 import { onOnboardingReopened } from './components/onboarding/show-onboarding-event'
 import { shouldShowOnboarding } from './components/onboarding/should-show-onboarding'
 import { MarkdownTemplatePicker } from './components/editor/MarkdownTemplatePicker'
+import { useIdleEditorDiffChunkPrefetch } from './components/editor/use-idle-editor-diff-chunk-prefetch'
 import { FloatingTerminalToggleButton } from './components/floating-terminal/FloatingTerminalToggleButton'
 import { TOGGLE_FLOATING_TERMINAL_EVENT } from '@/lib/floating-terminal'
 import {
@@ -1120,6 +1121,10 @@ function App(): React.JSX.Element {
       setRuntimeGraphSyncEnabled(false)
     }
   }, [workspaceSessionReady])
+
+  // Warm the lazy EditorPanel + DiffViewer chunks during idle time once the
+  // workspace session is up (see useIdleEditorDiffChunkPrefetch).
+  useIdleEditorDiffChunkPrefetch(workspaceSessionReady)
 
   // Why: session persistence never drives JSX — it only writes to disk.
   // Using a Zustand subscribe() outside React removes ~15 subscriptions from
