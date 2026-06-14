@@ -79,6 +79,14 @@ function getOnlyFileDiff(): FileDiffMetadata {
   return item.fileDiff
 }
 
+function getOnlyCodeViewItemVersion(): number | undefined {
+  const item = getOnlyCodeViewProps().items[0]
+  if (item?.type !== 'diff') {
+    throw new Error('Expected a CodeView diff item')
+  }
+  return item.version
+}
+
 describe('DiffViewer', () => {
   beforeEach(() => {
     mockState.codeViewProps = []
@@ -199,6 +207,91 @@ describe('DiffViewer', () => {
     expect(identity).toContain(oldFile.cacheKey)
     expect(identity).toContain(newFile.cacheKey)
     expect(identity).toContain(fileDiff.name)
+  })
+
+  it('rotates the CodeView item version when modified content changes for the same tab', async () => {
+    // Why: P5 swaps a refreshed diff into the live CodeView via the item version
+    // (no remount), so a real content change must rotate the version while an
+    // identical re-render keeps it stable.
+    const container = document.createElement('div')
+    let root: Root | null = createRoot(container)
+
+    function renderModified(modifiedContent: string): void {
+      mockState.codeViewProps = []
+      root?.render(
+        <DiffViewer
+          modelKey="diff:src/app.ts"
+          originalContent={'const value = 1\n'}
+          modifiedContent={modifiedContent}
+          language="typescript"
+          relativePath="src/app.ts"
+          sideBySide={false}
+        />
+      )
+    }
+
+    await act(async () => {
+      renderModified('const value = 2\n')
+    })
+    const firstVersion = getOnlyCodeViewItemVersion()
+
+    await act(async () => {
+      renderModified('const value = 3\n')
+    })
+    const changedVersion = getOnlyCodeViewItemVersion()
+
+    await act(async () => {
+      renderModified('const value = 3\n')
+    })
+    const unchangedVersion = getOnlyCodeViewItemVersion()
+
+    expect(changedVersion).not.toBe(firstVersion)
+    expect(unchangedVersion).toBe(changedVersion)
+
+    await act(async () => {
+      root?.unmount()
+      root = null
+    })
+  })
+
+  it('rotates the CodeView item version when only original content changes (git add path)', async () => {
+    // Why: the EditorContent remount key tracks only the modified-side signature,
+    // so an original-only change (e.g. `git add` moving the base) refreshes the
+    // view solely through DiffViewer's item version, which fingerprints both
+    // sides — pin that it rotates without a remount.
+    const container = document.createElement('div')
+    let root: Root | null = createRoot(container)
+
+    function renderOriginal(originalContent: string): void {
+      mockState.codeViewProps = []
+      root?.render(
+        <DiffViewer
+          modelKey="diff:src/app.ts"
+          originalContent={originalContent}
+          modifiedContent={'const value = 99\n'}
+          language="typescript"
+          relativePath="src/app.ts"
+          sideBySide={false}
+        />
+      )
+    }
+
+    await act(async () => {
+      renderOriginal('const value = 1\n')
+    })
+    const firstVersion = getOnlyCodeViewItemVersion()
+
+    await act(async () => {
+      renderOriginal('const value = 2\n')
+    })
+    const changedVersion = getOnlyCodeViewItemVersion()
+
+    expect(changedVersion).not.toBe(firstVersion)
+
+    await act(async () => {
+      root?.unmount()
+      root = null
+    })
   })
 
   it('uses Pierre light theme background for the outer diff scrollbar gutter', () => {

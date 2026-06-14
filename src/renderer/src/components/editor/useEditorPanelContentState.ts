@@ -9,6 +9,7 @@ import { fetchEditorDiffContent, fetchEditorFileContent } from './editor-content
 import { canUseChangesModeForFile } from './editor-panel-file-mode'
 import {
   isReloadableSingleFileDiffTab,
+  shouldForceReloadDiffOnNonceBump,
   shouldReloadDiffOnGitStatusChange
 } from './editor-panel-diff-reload'
 import {
@@ -46,6 +47,10 @@ export function useEditorPanelContentState({
   const diffContentsRef = useRef(diffContents)
   diffContentsRef.current = diffContents
   const fileLoadRetryAttemptsRef = useRef<Record<string, number>>({})
+  // Why: forced reloads bypass the in-flight dedupe, so two can be airborne for
+  // the same tab at once; a per-file generation lets the resolve handler drop a
+  // stale RPC that lands after a newer one (last-issued wins, not last-resolved).
+  const diffLoadGenerationRef = useRef<Record<string, number>>({})
   const openFilesRef = useRef(openFiles)
   openFilesRef.current = openFiles
   const editorViewModeRef = useRef(editorViewMode)
@@ -110,10 +115,18 @@ export function useEditorPanelContentState({
       if (!file || (file.mode === 'edit' && !canUseChangesModeForFile(file))) {
         return
       }
+      const generation = (diffLoadGenerationRef.current[file.id] ?? 0) + 1
+      diffLoadGenerationRef.current[file.id] = generation
       try {
         const result = await fetchEditorDiffContent(file, options)
+        if (diffLoadGenerationRef.current[file.id] !== generation) {
+          return
+        }
         setDiffContents((prev) => ({ ...prev, [file.id]: result }))
       } catch (err) {
+        if (diffLoadGenerationRef.current[file.id] !== generation) {
+          return
+        }
         setDiffContents((prev) => ({
           ...prev,
           [file.id]: {
@@ -249,22 +262,23 @@ export function useEditorPanelContentState({
   }, [activeFileGitStatusSignature, isChangesMode, activeFile?.id, loadDiffContent])
 
   useEffect(() => {
-    const nonce = activeFile?.diffContentReloadNonce
-    if (!activeFile?.id || nonce === undefined || nonce === 0) {
+    if (!activeFile?.id) {
       return
     }
     const current = openFilesRef.current.find((f) => f.id === activeFile.id)
-    if (!current || !isReloadableSingleFileDiffTab(current)) {
+    if (
+      !current ||
+      !shouldForceReloadDiffOnNonceBump(
+        current,
+        activeFile.diffContentReloadNonce,
+        Boolean(diffContentsRef.current[current.id])
+      )
+    ) {
       return
     }
-    setDiffContents((prev) => {
-      if (!prev[current.id]) {
-        return prev
-      }
-      const next = { ...prev }
-      delete next[current.id]
-      return next
-    })
+    // Why: do NOT delete diffContents[id] first — keep the stale diff visible and
+    // let the forced refetch swap it atomically on arrival, so re-clicking an open
+    // diff tab never blanks to "Loading…" (mirrors the git-status reload effect).
     void loadDiffContent(current, { force: true })
   }, [activeFile?.diffContentReloadNonce, activeFile?.id, loadDiffContent])
 
