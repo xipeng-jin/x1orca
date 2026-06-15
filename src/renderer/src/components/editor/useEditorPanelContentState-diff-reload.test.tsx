@@ -28,7 +28,10 @@ vi.mock('./editor-content-fetch', () => ({
       diffFetch.calls.push({ id: file.id, force: options?.force, resolve })
     }),
   // File reads never resolve here — these tests only exercise the diff path.
-  fetchEditorFileContent: () => new Promise<never>(() => {})
+  fetchEditorFileContent: () => new Promise<never>(() => {}),
+  // Fingerprint attach (P6) is exercised in editor-content-fetch.test.ts; here it
+  // is a pass-through so the hook's reload/swap behavior is what is under test.
+  withDiffContentFingerprints: (result: DiffContent) => result
 }))
 
 import { useEditorPanelContentState } from './useEditorPanelContentState'

@@ -5,7 +5,11 @@ import { joinPath } from '@/lib/path'
 import { useAppStore } from '@/store'
 import { settingsForRuntimeOwner } from '@/runtime/runtime-rpc-client'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
-import { fetchEditorDiffContent, fetchEditorFileContent } from './editor-content-fetch'
+import {
+  fetchEditorDiffContent,
+  fetchEditorFileContent,
+  withDiffContentFingerprints
+} from './editor-content-fetch'
 import { canUseChangesModeForFile } from './editor-panel-file-mode'
 import {
   isReloadableSingleFileDiffTab,
@@ -122,20 +126,20 @@ export function useEditorPanelContentState({
         if (diffLoadGenerationRef.current[file.id] !== generation) {
           return
         }
-        setDiffContents((prev) => ({ ...prev, [file.id]: result }))
+        setDiffContents((prev) => ({ ...prev, [file.id]: withDiffContentFingerprints(result) }))
       } catch (err) {
         if (diffLoadGenerationRef.current[file.id] !== generation) {
           return
         }
         setDiffContents((prev) => ({
           ...prev,
-          [file.id]: {
+          [file.id]: withDiffContentFingerprints({
             kind: 'text',
             originalContent: '',
             modifiedContent: `Error loading diff: ${err}`,
             originalIsBinary: false,
             modifiedIsBinary: false
-          }
+          })
         }))
       }
     },

@@ -14,7 +14,28 @@ import {
   getRuntimeGitDiff,
   getRuntimeGitScope
 } from '@/runtime/runtime-git-client'
+import type { GitDiffResult } from '../../../../shared/types'
+import { getContentFingerprint } from './pierre-content-fingerprint'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
+
+// Why: fingerprint both sides once when a diff resolves (P6) so per-mount
+// DiffViewer builds and the EditorContent remount key reuse the hash instead of
+// re-running FNV over full contents every mount. Apply at every point a diff's
+// content lands in React state — including the post-save modifiedContent rewrite
+// — so the attached fingerprints never drift from the content they describe.
+// Binary diffs never reach the hashing renderer, so they pass through untouched.
+export function withDiffContentFingerprints(result: GitDiffResult): DiffContent {
+  if (result.kind !== 'text') {
+    return result
+  }
+  return {
+    ...result,
+    fingerprints: {
+      original: getContentFingerprint(result.originalContent),
+      modified: getContentFingerprint(result.modifiedContent)
+    }
+  }
+}
 
 // Why: module-level (not hook-bound) so non-React callers — e.g. a click/hover
 // prefetch — can start a read that coalesces with the mount-effect read. While

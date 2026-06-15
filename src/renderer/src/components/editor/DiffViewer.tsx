@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import {
   getFiletypeFromFileName,
-  parseDiffFromFile,
   type CodeViewItem,
   type CodeViewOptions,
   type FileContents,
@@ -13,6 +12,8 @@ import {
 import { useAppStore } from '@/store'
 import { scrollTopCache, setWithLRU } from '@/lib/scroll-cache'
 import { computeEditorFontSize } from '@/lib/editor-font-zoom'
+import { getContentFingerprint, getDiffIdentityVersion } from './pierre-content-fingerprint'
+import { getOrParseDiffFromFiles } from './parsed-diff-cache'
 import { PIERRE_DIFF_THEMES, usePierreDiffThemeType } from './pierre-diff-theme'
 
 type DiffViewerProps = {
@@ -23,12 +24,13 @@ type DiffViewerProps = {
   relativePath: string
   sideBySide: boolean
   branchOldPath?: string
+  // Why: fingerprints computed once when the diff resolved (P6). Present only
+  // when the prop content matches the fetched blob, so DiffViewer can skip the
+  // per-mount FNV pass; falls back to hashing when absent (e.g. live edits).
+  originalContentFingerprint?: string
+  modifiedContentFingerprint?: string
 }
 
-const FNV_OFFSET_BASIS_32 = 0x811c9dc5
-const FNV_PRIME_32 = 0x01000193
-const SECONDARY_HASH_SEED = 0x9e3779b9
-const SECONDARY_HASH_MULTIPLIER = 0x85ebca6b
 const PIERRE_DEFAULT_FONT_SIZE = 13
 const PIERRE_DEFAULT_LINE_HEIGHT = 20
 const PIERRE_CODE_VIEW_DIFF_ITEM_ID = 'orca-single-file-diff'
@@ -50,21 +52,6 @@ type PierreDiffScrollStyle = React.CSSProperties & {
   '--diffs-scrollbar-gutter-override': '0px'
 }
 
-function fnv1a32(input: string, seed: number, multiplier: number): number {
-  let hash = seed >>> 0
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, multiplier) >>> 0
-  }
-  return hash >>> 0
-}
-
-export function getContentFingerprint(content: string): string {
-  const primary = fnv1a32(content, FNV_OFFSET_BASIS_32, FNV_PRIME_32).toString(36)
-  const secondary = fnv1a32(content, SECONDARY_HASH_SEED, SECONDARY_HASH_MULTIPLIER).toString(36)
-  return `${content.length}:${primary}:${secondary}`
-}
-
 export function getPierreDiffLanguageOverride(name: string): SupportedLanguages | undefined {
   const lowerName = name.toLowerCase()
   if (lowerName.endsWith('.ipynb')) {
@@ -78,17 +65,21 @@ export function getPierreDiffLanguageOverride(name: string): SupportedLanguages 
 
 export function buildPierreDiffFile({
   name,
-  contents
+  contents,
+  fingerprint
 }: {
   name: string
   contents: string
+  // Why: precomputed at diff arrival (P6) to avoid re-hashing full contents per
+  // mount. Callers pass it only when it matches `contents`; absent → hash here.
+  fingerprint?: string
 }): FileContents {
   const languageOverride = getPierreDiffLanguageOverride(name)
   const cacheLanguage = languageOverride ?? getFiletypeFromFileName(name)
   const file: FileContents = {
     name,
     contents,
-    cacheKey: `orca:pierre-file:v1:${name}:${cacheLanguage}:${getContentFingerprint(contents)}`
+    cacheKey: `orca:pierre-file:v1:${name}:${cacheLanguage}:${fingerprint ?? getContentFingerprint(contents)}`
   }
   if (languageOverride) {
     // Why: Pierre's filename inference covers most source files; only override
@@ -146,7 +137,9 @@ export default function DiffViewer({
   modifiedContent,
   relativePath,
   sideBySide,
-  branchOldPath
+  branchOldPath,
+  originalContentFingerprint,
+  modifiedContentFingerprint
 }: DiffViewerProps): React.JSX.Element {
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
   const codeViewRef = useRef<CodeViewHandle<undefined> | null>(null)
@@ -160,21 +153,23 @@ export default function DiffViewer({
     () =>
       buildPierreDiffFile({
         name: branchOldPath ?? relativePath,
-        contents: originalContent
+        contents: originalContent,
+        fingerprint: originalContentFingerprint
       }),
-    [branchOldPath, originalContent, relativePath]
+    [branchOldPath, originalContent, originalContentFingerprint, relativePath]
   )
   const newFile = useMemo(
     () =>
       buildPierreDiffFile({
         name: relativePath,
-        contents: modifiedContent
+        contents: modifiedContent,
+        fingerprint: modifiedContentFingerprint
       }),
-    [modifiedContent, relativePath]
+    [modifiedContent, modifiedContentFingerprint, relativePath]
   )
   const hasRenderableDiff = originalContent !== modifiedContent || oldFile.name !== newFile.name
   const fileDiff = useMemo(
-    () => (hasRenderableDiff ? parseDiffFromFile(oldFile, newFile) : null),
+    () => (hasRenderableDiff ? getOrParseDiffFromFiles(oldFile, newFile) : null),
     [hasRenderableDiff, newFile, oldFile]
   )
   const zoomedFontSize = computeEditorFontSize(PIERRE_DEFAULT_FONT_SIZE, editorFontZoomLevel)
@@ -207,7 +202,7 @@ export default function DiffViewer({
     [fileDiff, newFile, oldFile]
   )
   const diffItemVersion = useMemo(
-    () => (diffIdentity ? fnv1a32(diffIdentity, FNV_OFFSET_BASIS_32, FNV_PRIME_32) : 0),
+    () => (diffIdentity ? getDiffIdentityVersion(diffIdentity) : 0),
     [diffIdentity]
   )
   const items = useMemo<CodeViewItem<undefined>[]>(

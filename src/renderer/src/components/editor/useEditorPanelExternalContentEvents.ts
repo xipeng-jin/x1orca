@@ -9,6 +9,7 @@ import {
   type EditorPathMutationTarget
 } from './editor-autosave'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
+import { withDiffContentFingerprints } from './editor-content-fetch'
 import { isReloadableSingleFileDiffTab } from './editor-panel-diff-reload'
 
 type EditorViewModeByFile = ReturnType<typeof useAppStore.getState>['editorViewMode']
@@ -85,7 +86,13 @@ export function useEditorPanelExternalContentEvents({
         if (!existing || existing.kind !== 'text') {
           return prev
         }
-        return { ...prev, [file.id]: { ...existing, modifiedContent: detail.content } }
+        // Why: rewriting modifiedContent must refresh the attached fingerprints
+        // (P6), or the precomputed modified hash would describe the pre-save blob
+        // and the DiffViewer cacheKey / remount key would not rotate.
+        return {
+          ...prev,
+          [file.id]: withDiffContentFingerprints({ ...existing, modifiedContent: detail.content })
+        }
       })
     }
     window.addEventListener(ORCA_EDITOR_FILE_SAVED_EVENT, handler as EventListener)

@@ -19,7 +19,8 @@ import {
   getNextConflictNavigationIndex
 } from './ConflictComponents'
 import type { MarkdownViewMode, OpenFile, PendingEditorReveal } from '@/store/slices/editor'
-import type { GitStatusEntry, GitDiffResult } from '../../../../shared/types'
+import type { GitStatusEntry } from '../../../../shared/types'
+import type { DiffContent } from './editor-panel-content-types'
 import { getMarkdownRenderMode } from './markdown-render-mode'
 import { getMarkdownRichModeUnsupportedMessage } from './markdown-rich-mode'
 import { exceedsMarkdownRichModeSizeLimit } from './markdown-rich-size-limit'
@@ -27,7 +28,7 @@ import { extractFrontMatter, prependFrontMatter } from './markdown-frontmatter'
 import { RichMarkdownErrorBoundary } from './RichMarkdownErrorBoundary'
 import { useMarkdownDocuments } from './useMarkdownDocuments'
 import { findGitConflictBlocks } from './monaco-conflict-decorations'
-import { getDiffContentSignature } from './diff-content-signature'
+import { getContentFingerprint } from './pierre-content-fingerprint'
 import { translate } from '@/i18n/i18n'
 import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
 
@@ -123,7 +124,7 @@ export function EditorContent({
   activeFile: OpenFile
   viewStateScopeId: string
   fileContents: Record<string, FileContent>
-  diffContents: Record<string, GitDiffResult>
+  diffContents: Record<string, DiffContent>
   editBuffers: Record<string, string>
   openFiles: OpenFile[]
   worktreeEntries: GitStatusEntry[]
@@ -910,9 +911,17 @@ export function EditorContent({
           diffStatus: activeFile.diffStatus
         })
       : activeFile.branchOldPath
+  // Why: read the modified-side fingerprint computed at diff arrival (P6); the
+  // key still rotates only on fetched-content change. Every text DiffContent that
+  // reaches here is stored via withDiffContentFingerprints, so this is a defensive
+  // fallback for the optional type — it does not run on production write paths.
+  const modifiedFingerprint = dc.fingerprints?.modified ?? getContentFingerprint(dc.modifiedContent)
+  // Why: the precomputed modified fingerprint describes dc.modifiedContent, so
+  // only hand it to DiffViewer when no live edit buffer overrides that content.
+  const hasModifiedEditBuffer = editBuffers[activeFile.id] !== undefined
   return (
     <DiffViewer
-      key={`${viewStateScopeId}:${diffReloadNonce}:${getDiffContentSignature(dc.modifiedContent)}`}
+      key={`${viewStateScopeId}:${diffReloadNonce}:${modifiedFingerprint}`}
       modelKey={diffViewStateKey}
       originalContent={dc.originalContent}
       modifiedContent={modifiedDiffContent}
@@ -922,6 +931,8 @@ export function EditorContent({
       relativePath={activeFile.relativePath}
       sideBySide={sideBySide}
       branchOldPath={diffViewerOldPath}
+      originalContentFingerprint={dc.fingerprints?.original}
+      modifiedContentFingerprint={hasModifiedEditBuffer ? undefined : dc.fingerprints?.modified}
     />
   )
 }

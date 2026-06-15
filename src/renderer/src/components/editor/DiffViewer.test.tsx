@@ -48,10 +48,10 @@ vi.mock('@pierre/diffs/react', async () => {
 
 import DiffViewer, {
   buildPierreDiffFile,
-  getContentFingerprint,
   getInitialPierreCodeViewScrollTarget,
   getPierreCodeViewDiffIdentity
 } from './DiffViewer'
+import { getContentFingerprint } from './pierre-content-fingerprint'
 
 type CapturedCodeViewProps = {
   items: CodeViewItem[]
@@ -477,6 +477,20 @@ describe('DiffViewer', () => {
     expect(renamed.cacheKey).toContain('src/app.tsx:tsx')
     expect(overridden.cacheKey).toContain('src/app.ipynb:json')
     expect(base.cacheKey).not.toContain('diff:new')
+  })
+
+  it('reuses the supplied fingerprint in the cache key instead of re-hashing', () => {
+    const contents = 'const value = 1\n'
+    // A sentinel that hashing the contents would never produce, so the test fails
+    // if buildPierreDiffFile ignored the supplied value and recomputed it.
+    const sentinel = 'sentinel-precomputed-fingerprint'
+    const withFingerprint = buildPierreDiffFile({
+      name: 'src/app.ts',
+      contents,
+      fingerprint: sentinel
+    })
+    expect(withFingerprint.cacheKey).toContain(`:${sentinel}`)
+    expect(withFingerprint.cacheKey).not.toContain(getContentFingerprint(contents))
   })
 
   it('uses only cached pixel scroll for initial CodeView scroll targets', () => {

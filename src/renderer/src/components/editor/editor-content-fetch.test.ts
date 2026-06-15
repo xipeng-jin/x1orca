@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OpenFile } from '@/store/slices/editor'
+import type { GitDiffResult } from '../../../../shared/types'
 import { getRuntimeGitDiff } from '@/runtime/runtime-git-client'
 import { readRuntimeFileContent } from '@/runtime/runtime-file-client'
 import type { DiffContent, FileContent } from './editor-panel-content-types'
 import {
   fetchEditorDiffContent,
   fetchEditorFileContent,
-  resetEditorDiffClickHandoffForTests
+  resetEditorDiffClickHandoffForTests,
+  withDiffContentFingerprints
 } from './editor-content-fetch'
+import { getContentFingerprint } from './pierre-content-fingerprint'
 
 // Why: the handoff key embeds this per-file status signature; tests mutate it to
 // prove a worktree change between a settled click and the mount invalidates it.
@@ -349,5 +352,36 @@ describe('fetchEditorFileContent', () => {
     await expect(fetchEditorFileContent(args)).resolves.toBe(firstResult)
     await expect(fetchEditorFileContent(args)).rejects.toThrow('gone')
     expect(readFileMock).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('withDiffContentFingerprints', () => {
+  it('attaches matching double-FNV fingerprints to text diffs', () => {
+    const result = withDiffContentFingerprints({
+      kind: 'text',
+      originalContent: 'left\n',
+      modifiedContent: 'right\n',
+      originalIsBinary: false,
+      modifiedIsBinary: false
+    })
+
+    expect(result.fingerprints).toEqual({
+      original: getContentFingerprint('left\n'),
+      modified: getContentFingerprint('right\n')
+    })
+  })
+
+  it('leaves binary diffs untouched (they never reach the hashing renderer)', () => {
+    const binary: GitDiffResult = {
+      kind: 'binary',
+      originalContent: '',
+      modifiedContent: 'data',
+      originalIsBinary: true,
+      modifiedIsBinary: true
+    }
+    const result = withDiffContentFingerprints(binary)
+
+    expect(result).toBe(binary)
+    expect(result.fingerprints).toBeUndefined()
   })
 })
