@@ -44,3 +44,17 @@ Be mindful of the user's `gh` CLI API rate limit — batch requests where possib
 Never commit PR evidence images; attach them to the PR conversation instead (but never use gh-attach).
 
 ## Type Declarations: Prefer `.ts` Over `.d.ts`
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `xipeng-jin/x1orca` (the `origin` fork), via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

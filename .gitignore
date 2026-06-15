@@ -80,6 +80,9 @@ docs/**
 !docs/readme/**
 !docs/reference/
 !docs/reference/**
+# Agent skill config (issue tracker, triage labels, domain docs) is durable, checked-in.
+!docs/agents/
+!docs/agents/**
 # Keep generated React perf scan ledgers local; durable docs still use docs/reference.
 docs/reference/react-performance-audit.md
 !docs/STYLEGUIDE.md
