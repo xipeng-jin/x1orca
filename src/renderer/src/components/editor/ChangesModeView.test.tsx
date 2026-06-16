@@ -15,7 +15,7 @@ const diffViewerMock = vi.hoisted(() => ({
   latestProps: null as DiffViewerProps | null
 }))
 
-vi.mock('./DiffViewer', () => ({
+vi.mock('./EditableChangesDiffViewer', () => ({
   default: (props: DiffViewerProps) => {
     diffViewerMock.latestProps = props
     return <div data-testid="diff-viewer-probe" />

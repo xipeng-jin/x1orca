@@ -17,6 +17,9 @@ import { applyDiffEditorLineNumberOptions } from './diff-editor-line-number-opti
 import type { DiffComment } from '../../../../shared/types'
 import { isDiffComment } from '@/lib/diff-comment-compat'
 import { installEditorSaveShortcut } from './editor-shortcuts'
+import { LargeDiffFallback } from './LargeDiffFallback'
+import type { LargeDiffRenderLimit } from './large-diff-render-limit'
+import { getDiffViewerLargeDiffSaveAction } from './diff-viewer-large-diff-save-action'
 
 type EditableChangesDiffViewerProps = {
   modelKey: string
@@ -43,6 +46,10 @@ type EditableChangesDiffViewerProps = {
   addLineCommentPlaceholder?: string
   onContentChange?: (content: string) => void
   onSave?: (content: string) => void
+  largeDiffRenderLimit?: LargeDiffRenderLimit
+  // Why: main-process limited diffs intentionally blank text bodies before IPC;
+  // the fallback must not treat that placeholder as a saveable draft.
+  largeDiffSaveContentAvailable?: boolean
 }
 
 export default function EditableChangesDiffViewer({
@@ -62,7 +69,9 @@ export default function EditableChangesDiffViewer({
   addLineCommentLabel,
   addLineCommentPlaceholder,
   onContentChange,
-  onSave
+  onSave,
+  largeDiffRenderLimit,
+  largeDiffSaveContentAvailable
 }: EditableChangesDiffViewerProps): React.JSX.Element {
   const settings = useAppStore((s) => s.settings)
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
@@ -389,6 +398,23 @@ export default function EditableChangesDiffViewer({
       lineNumberOptionsSubRef.current = null
     }
   }, [sideBySide])
+
+  if (largeDiffRenderLimit?.limited) {
+    return (
+      <div className="flex flex-1 min-h-0 flex-col">
+        <LargeDiffFallback
+          filePath={relativePath}
+          renderLimit={largeDiffRenderLimit}
+          action={getDiffViewerLargeDiffSaveAction({
+            editable,
+            modifiedContent,
+            onSave,
+            saveContentAvailable: largeDiffSaveContentAvailable
+          })}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">

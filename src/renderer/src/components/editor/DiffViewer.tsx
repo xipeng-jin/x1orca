@@ -15,6 +15,7 @@ import { computeEditorFontSize } from '@/lib/editor-font-zoom'
 import { getContentFingerprint, getDiffIdentityVersion } from './pierre-content-fingerprint'
 import { getOrParseDiffFromFiles } from './parsed-diff-cache'
 import { PIERRE_DIFF_THEMES, usePierreDiffThemeType } from './pierre-diff-theme'
+import type { LargeDiffRenderLimit } from './large-diff-render-limit'
 
 type DiffViewerProps = {
   modelKey: string
@@ -29,6 +30,8 @@ type DiffViewerProps = {
   // per-mount FNV pass; falls back to hashing when absent (e.g. live edits).
   originalContentFingerprint?: string
   modifiedContentFingerprint?: string
+  largeDiffRenderLimit?: LargeDiffRenderLimit
+  largeDiffSaveContentAvailable?: boolean
 }
 
 const PIERRE_DEFAULT_FONT_SIZE = 13
