@@ -582,8 +582,10 @@ export async function getDiff(
   filePath: string,
   staged: boolean,
   compareAgainstHead = false,
-  options: GitRuntimeOptions & { oldPath?: string } = {}
+  optionsOrOldPath: (GitRuntimeOptions & { oldPath?: string }) | string = {}
 ): Promise<GitDiffResult> {
+  const options =
+    typeof optionsOrOldPath === 'string' ? { oldPath: optionsOrOldPath } : optionsOrOldPath
   let originalContent = ''
   let modifiedContent = ''
   let originalIsBinary = false

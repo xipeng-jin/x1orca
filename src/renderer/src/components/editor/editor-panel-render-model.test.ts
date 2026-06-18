@@ -143,6 +143,7 @@ describe('getEditorPanelRenderModel', () => {
         diffSource: 'unstaged'
       }),
       fileContents: {},
+      editorDrafts: {},
       gitStatusByWorktree: {},
       gitBranchChangesByWorktree: {},
       markdownViewMode: {},
@@ -158,6 +159,7 @@ describe('getEditorPanelRenderModel', () => {
     const model = getEditorPanelRenderModel({
       activeFile: createOpenFile({ mode: 'edit' }),
       fileContents: {},
+      editorDrafts: {},
       gitStatusByWorktree: {},
       gitBranchChangesByWorktree: {},
       markdownViewMode: {},

@@ -34,6 +34,7 @@ import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
 
 const MonacoEditor = lazy(() => import('./MonacoEditor'))
 const DiffViewer = lazy(() => import('./DiffViewer'))
+const EditableChangesDiffViewer = lazy(() => import('./EditableChangesDiffViewer'))
 const CombinedDiffViewer = lazy(() => import('./CombinedDiffViewer'))
 const RichMarkdownEditor = lazy(() => import('./RichMarkdownEditor'))
 const MarkdownPreview = lazy(() => import('./MarkdownPreview'))
@@ -919,6 +920,34 @@ export function EditorContent({
   // Why: the precomputed modified fingerprint describes dc.modifiedContent, so
   // only hand it to DiffViewer when no live edit buffer overrides that content.
   const hasModifiedEditBuffer = editBuffers[activeFile.id] !== undefined
+  const originalFingerprint = dc.fingerprints?.original ?? getContentFingerprint(dc.originalContent)
+  const isEditableDiff = activeFile.diffSource === 'unstaged'
+
+  if (isEditableDiff) {
+    // Why: Pierre owns read-only diffs; unstaged diff tabs still need Monaco so
+    // edits, save shortcuts, and dirty tracking keep working after the rebase.
+    return (
+      <EditableChangesDiffViewer
+        key={`${viewStateScopeId}:${diffReloadNonce}:${modifiedFingerprint}`}
+        modelKey={diffViewStateKey}
+        originalModelKey={`${diffViewStateKey}:original:${originalFingerprint}`}
+        modifiedModelKey={`${diffViewStateKey}:modified:${modifiedFingerprint}:${diffReloadNonce}`}
+        originalContent={dc.originalContent}
+        modifiedContent={modifiedDiffContent}
+        largeDiffRenderLimit={dc.largeDiffRenderLimit}
+        largeDiffSaveContentAvailable={largeDiffSaveContentAvailable}
+        language={monacoLanguage}
+        filePath={activeFile.filePath}
+        relativePath={activeFile.relativePath}
+        sideBySide={sideBySide}
+        editable={true}
+        worktreeId={activeFile.worktreeId}
+        onContentChange={handleContentChange}
+        onSave={isMarkdown ? md.mdSave : handleSave}
+      />
+    )
+  }
+
   return (
     <DiffViewer
       key={`${viewStateScopeId}:${diffReloadNonce}:${modifiedFingerprint}`}
