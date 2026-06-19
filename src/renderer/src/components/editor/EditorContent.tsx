@@ -958,6 +958,8 @@ export function EditorContent({
       largeDiffSaveContentAvailable={largeDiffSaveContentAvailable}
       language={monacoLanguage}
       relativePath={activeFile.relativePath}
+      worktreeId={activeFile.worktreeId}
+      diffSource={activeFile.diffSource}
       sideBySide={sideBySide}
       branchOldPath={diffViewerOldPath}
       originalContentFingerprint={dc.fingerprints?.original}

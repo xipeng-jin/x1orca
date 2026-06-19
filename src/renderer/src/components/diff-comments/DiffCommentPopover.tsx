@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import { CornerDownLeft } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { useMountedRef } from '@/hooks/useMountedRef'
 import { translate } from '@/i18n/i18n'
+import { DiffCommentPopoverForm } from './DiffCommentPopoverForm'
 import { resolveDiffCommentPopoverTop } from './diff-comment-popover-position'
 
 // Why: rendered as a DOM sibling overlay inside the editor container rather
@@ -36,24 +34,14 @@ export function DiffCommentPopover({
   left,
   lineHeight = 0,
   title,
-  placeholder = 'Add note for the AI',
-  submitLabel = 'Add note',
-  submittingLabel = 'Saving…',
+  placeholder,
+  submitLabel,
+  submittingLabel,
   onCancel,
   onSubmit
 }: Props): React.JSX.Element {
-  const [body, setBody] = useState('')
-  // Why: `submitting` prevents duplicate note rows when the user
-  // double-clicks the Add note button or hits Enter twice before the
-  // IPC round-trip resolves. Iteration 1 made submission async and keeps the
-  // popover open on failure (to preserve the draft); that widened the window
-  // between the first click and `setPopover(null)` during which a second
-  // trigger would call `addDiffComment` again and produce a second row with a
-  // fresh id/createdAt. Tracked in React state (not a ref) so the button can
-  // reflect the in-flight status to the user.
-  const [submitting, setSubmitting] = useState(false)
-  const mountedRef = useMountedRef()
   const popoverRef = useRef<HTMLDivElement | null>(null)
+  const labelId = useId()
   // Why: stash onCancel in a ref so the document mousedown listener below can
   // read the freshest callback without listing `onCancel` in its dependency
   // array. Parents (DiffSectionItem, DiffViewer) pass a new arrow function on
@@ -63,10 +51,6 @@ export function DiffCommentPopover({
   // useDiffCommentDecorator.tsx.
   const onCancelRef = useRef(onCancel)
   onCancelRef.current = onCancel
-  // Why: stable id per-instance so multiple popovers (should they ever coexist)
-  // don't collide on aria-labelledby references. Screen readers announce the
-  // "Line N" label as the dialog's accessible name.
-  const labelId = useId()
   // Why: `top` anchors the popover just below the selected line. Near the
   // bottom of the editor viewport that downward box gets clipped by the pane's
   // overflow container, so the resolved top may flip the popover above the line
@@ -120,12 +104,6 @@ export function DiffCommentPopover({
     return () => observer.disconnect()
   }, [measureResolvedTop])
 
-  const focusTextareaRef = useCallback((textarea: HTMLTextAreaElement | null): void => {
-    // Why: the draft field should receive focus as soon as the popover mounts;
-    // no external system needs a post-render Effect for this.
-    textarea?.focus()
-  }, [])
-
   // Why: Monaco's editor area does not bubble a synthetic React click up to
   // the popover's onClick. Without a document-level mousedown listener, the
   // popover has no way to detect clicks outside its own bounds. We keep the
@@ -150,29 +128,6 @@ export function DiffCommentPopover({
     }
   }, [])
 
-  const autoResize = (el: HTMLTextAreaElement): void => {
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
-  }
-
-  const handleSubmit = async (): Promise<void> => {
-    if (submitting) {
-      return
-    }
-    const trimmed = body.trim()
-    if (!trimmed) {
-      return
-    }
-    setSubmitting(true)
-    try {
-      await onSubmit(trimmed)
-    } finally {
-      if (mountedRef.current) {
-        setSubmitting(false)
-      }
-    }
-  }
-
   return (
     <div
       ref={popoverRef}
@@ -184,71 +139,21 @@ export function DiffCommentPopover({
       onMouseDown={(ev) => ev.stopPropagation()}
       onClick={(ev) => ev.stopPropagation()}
     >
-      {/* Content */}
-      <div className="orca-diff-comment-content-col" style={{ gap: '8px' }}>
-        <div id={labelId} className="orca-diff-comment-popover-label">
-          {title ??
-            (startLine && startLine !== lineNumber
-              ? translate(
-                  'auto.components.diff.comments.DiffCommentPopover.c845170b3b',
-                  'Lines {{value0}}-{{value1}}',
-                  { value0: startLine, value1: lineNumber }
-                )
-              : translate(
-                  'auto.components.diff.comments.DiffCommentPopover.e05063cfc1',
-                  'Line {{value0}}',
-                  { value0: lineNumber }
-                ))}
-        </div>
-        <textarea
-          ref={focusTextareaRef}
-          className="orca-diff-comment-popover-textarea"
-          placeholder={placeholder}
-          value={body}
-          onChange={(e) => {
-            setBody(e.target.value)
-            autoResize(e.currentTarget)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              onCancel()
-              return
-            }
-            // Why: plain Enter submits so the note popover behaves like a
-            // single-field form. Shift+Enter inserts a newline (browser default)
-            // so multi-line notes are still possible. We also accept
-            // Cmd/Ctrl+Enter as a submit alias so users who learned the old
-            // shortcut aren't silently broken. IME composition (isComposing) is
-            // excluded because Enter during composition only confirms the
-            // conversion candidate — submitting then would send a half-typed
-            // note for CJK/IME users. We guard against a second Enter while an
-            // earlier submit is still awaiting IPC — otherwise it would enqueue
-            // a duplicate addDiffComment call.
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing && !e.shiftKey) {
-              e.preventDefault()
-              if (submitting) {
-                return
-              }
-              void handleSubmit()
-            }
-          }}
-          rows={3}
-        />
-        <div className="orca-diff-comment-popover-footer">
-          <Button variant="ghost" size="sm" onClick={onCancel}>
-            {translate('auto.components.diff.comments.DiffCommentPopover.2b3ce6d394', 'Cancel')}
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={submitting || body.trim().length === 0}
-          >
-            {submitting ? submittingLabel : submitLabel}
-            {!submitting && <CornerDownLeft className="ml-1 size-3 opacity-70" />}
-          </Button>
-        </div>
-      </div>
+      <DiffCommentPopoverForm
+        lineNumber={lineNumber}
+        startLine={startLine}
+        title={title}
+        labelId={labelId}
+        placeholder={placeholder}
+        submitLabel={submitLabel}
+        submittingLabel={submittingLabel}
+        cancelLabel={translate(
+          'auto.components.diff.comments.DiffCommentPopover.2b3ce6d394',
+          'Cancel'
+        )}
+        onCancel={onCancel}
+        onSubmit={onSubmit}
+      />
     </div>
   )
 }

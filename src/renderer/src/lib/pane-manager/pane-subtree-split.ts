@@ -6,6 +6,7 @@ import type {
 } from './pane-manager-types'
 import type { DragReorderCallbacks } from './pane-drag-reorder'
 import { splitManagedPane } from './pane-split-close'
+import { setsEqual } from '@/lib/referential-collections'
 
 export type SplitPaneAroundLeafIdsOptions = {
   ratio?: number
@@ -112,18 +113,6 @@ function leafIdsInContainer(container: HTMLElement): Set<string> {
     }
   }
   return leafIds
-}
-
-function setsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
-  if (left.size !== right.size) {
-    return false
-  }
-  for (const value of left) {
-    if (!right.has(value)) {
-      return false
-    }
-  }
-  return true
 }
 
 function placeCreatedPaneBeforeSource(

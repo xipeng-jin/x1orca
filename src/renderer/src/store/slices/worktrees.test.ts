@@ -1996,6 +1996,25 @@ describe('removeWorktree state cleanup', () => {
     })
   })
 
+  it('cleans up Pierre diff comment expansion scopes for the removed worktree', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({ id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' })
+
+    store.setState({
+      worktreesByRepo: { repo1: [wt] },
+      pierreDiffCommentExpandedIdsByScope: {
+        'repo1::/path/wt1\u001fsrc/app.ts': new Set(['c1']),
+        'repo1::/path/wt2\u001fsrc/app.ts': new Set(['c2'])
+      }
+    } as Partial<AppState>)
+
+    await store.getState().removeWorktree('repo1::/path/wt1')
+
+    expect(store.getState().pierreDiffCommentExpandedIdsByScope).toEqual({
+      'repo1::/path/wt2\u001fsrc/app.ts': new Set(['c2'])
+    })
+  })
+
   it('cleans up dotfile visibility for the removed worktree', async () => {
     const store = createTestStore()
     const wt = makeWorktree({ id: 'repo1::/path/wt1', repoId: 'repo1', path: '/path/wt1' })
@@ -4095,6 +4114,7 @@ describe('migrateWorktreeIdentity', () => {
       defaultTerminalTabsAppliedByWorktreeId: { [OLD]: true },
       recentlyClosedEditorTabsByWorktree: { [OLD]: [{ id: 'f1', worktreeId: OLD }] },
       remoteStatusesByWorktree: { [OLD]: { ahead: 1 } },
+      pierreDiffCommentExpandedIdsByScope: { [`${OLD}\u001fsrc/app.ts`]: new Set(['c1']) },
       everActivatedWorktreeIds: new Set([OLD]),
       openFiles: [{ id: 'f1', worktreeId: OLD }],
       pendingReconnectWorktreeIds: [OLD],
@@ -4139,6 +4159,8 @@ describe('migrateWorktreeIdentity', () => {
     // The two maps absent from the purge list are still re-keyed.
     expect(s.recentlyClosedEditorTabsByWorktree[NEW]).toEqual([{ id: 'f1', worktreeId: NEW }])
     expect(s.remoteStatusesByWorktree[NEW]).toEqual({ ahead: 1 })
+    expect(s.pierreDiffCommentExpandedIdsByScope[`${OLD}\u001fsrc/app.ts`]).toBeUndefined()
+    expect(s.pierreDiffCommentExpandedIdsByScope[`${NEW}\u001fsrc/app.ts`]).toEqual(new Set(['c1']))
     expect(s.everActivatedWorktreeIds.has(NEW)).toBe(true)
     expect(s.everActivatedWorktreeIds.has(OLD)).toBe(false)
     expect(s.openFiles[0].worktreeId).toBe(NEW)

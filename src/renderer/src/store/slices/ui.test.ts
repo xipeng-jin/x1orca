@@ -192,6 +192,25 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+describe('createUISlice scroll-to-diff-comment requests', () => {
+  it('increments the request sequence for non-null requests only', () => {
+    const store = createUIStore()
+
+    expect(store.getState().scrollToDiffCommentRequestSeq).toBe(0)
+    store.getState().setScrollToDiffCommentId('comment-1')
+    expect(store.getState().scrollToDiffCommentId).toBe('comment-1')
+    expect(store.getState().scrollToDiffCommentRequestSeq).toBe(1)
+
+    store.getState().setScrollToDiffCommentId(null)
+    expect(store.getState().scrollToDiffCommentId).toBeNull()
+    expect(store.getState().scrollToDiffCommentRequestSeq).toBe(1)
+
+    store.getState().setScrollToDiffCommentId('comment-1')
+    expect(store.getState().scrollToDiffCommentId).toBe('comment-1')
+    expect(store.getState().scrollToDiffCommentRequestSeq).toBe(2)
+  })
+})
+
 describe('createUISlice agent send target mode', () => {
   const worktreeId = 'wt-1'
   const tabId = 'tab-1'

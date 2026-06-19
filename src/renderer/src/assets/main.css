@@ -2982,6 +2982,44 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   max-width: 420px;
 }
 
+.orca-diff-comment-inline-pierre {
+  padding: 4px 24px 6px 0;
+}
+
+.orca-diff-comment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 10%, var(--border));
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease;
+}
+
+.orca-diff-comment-chip:hover {
+  border-color: color-mix(in srgb, var(--foreground) 16%, var(--border));
+  background: color-mix(in srgb, var(--foreground) 5%, var(--background));
+  color: var(--foreground);
+}
+
+.orca-diff-comment-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
 /* Why: the saved note used to blend into the editor background because it
    reused the same muted/background mix the editor itself uses. Stay
    grayscale to match the rest of the UI, but lift the card off the editor
@@ -3167,6 +3205,10 @@ html.onboarding-tour-start-transition::view-transition-new(root) {
   box-shadow:
     0 10px 32px rgba(0, 0, 0, 0.3),
     0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.orca-diff-comment-popover-static {
+  padding: 12px 14px;
 }
 
 .orca-diff-comment-popover-label {

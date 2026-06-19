@@ -110,6 +110,7 @@ import {
 import { buildAgentNotificationId } from '../../../../shared/agent-notification-id'
 import { parsePaneKey } from '../../../../shared/stable-pane-id'
 import { translate } from '@/i18n/i18n'
+import { EMPTY_STRING_SET, setsEqual } from '@/lib/referential-collections'
 
 export type PendingSidebarWorktreeReveal = {
   worktreeId: string
@@ -258,7 +259,6 @@ function migrateStatusBarItems(items: readonly string[] | undefined): StatusBarI
 
 const DEFAULT_ON_PORTS_STATUS_BAR_ITEM: StatusBarItem = 'ports'
 const DEFAULT_ON_KIMI_STATUS_BAR_ITEM: StatusBarItem = 'kimi'
-
 function normalizeHydratedVisibleWorkspaceHostIds(ui: PersistedUIState): VisibleWorkspaceHostIds {
   const visibleHostIds = normalizeVisibleExecutionHostIds(ui.visibleWorkspaceHostIds)
   if (visibleHostIds) {
@@ -857,7 +857,15 @@ export type UISlice = {
   // line, so the same id can be requested again later without the surface
   // seeing a stale value.
   scrollToDiffCommentId: string | null
+  scrollToDiffCommentRequestSeq: number
   setScrollToDiffCommentId: (id: string | null) => void
+  // Why: Pierre annotation expansion is per renderer window/session. Keeping it
+  // in Zustand makes mounted diff views subscribe to the same ephemeral state.
+  pierreDiffCommentExpandedIdsByScope: Record<string, ReadonlySet<string>>
+  updatePierreDiffCommentExpandedIds: (
+    scopeKey: string,
+    updater: (current: ReadonlySet<string>) => ReadonlySet<string>
+  ) => void
   persistedUIReady: boolean
   uiZoomLevel: number
   setUIZoomLevel: (level: number) => void
@@ -2127,7 +2135,29 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     }),
   clearPendingRevealWorktreeId: () => set({ pendingRevealWorktree: null }),
   scrollToDiffCommentId: null,
-  setScrollToDiffCommentId: (id) => set({ scrollToDiffCommentId: id }),
+  scrollToDiffCommentRequestSeq: 0,
+  setScrollToDiffCommentId: (id) =>
+    set((s) => ({
+      scrollToDiffCommentId: id,
+      scrollToDiffCommentRequestSeq:
+        id === null ? s.scrollToDiffCommentRequestSeq : s.scrollToDiffCommentRequestSeq + 1
+    })),
+  pierreDiffCommentExpandedIdsByScope: {},
+  updatePierreDiffCommentExpandedIds: (scopeKey, updater) =>
+    set((s) => {
+      const current = s.pierreDiffCommentExpandedIdsByScope[scopeKey] ?? EMPTY_STRING_SET
+      const next = updater(current)
+      if (setsEqual(current, next)) {
+        return {}
+      }
+      const byScope = { ...s.pierreDiffCommentExpandedIdsByScope }
+      if (next.size === 0) {
+        delete byScope[scopeKey]
+      } else {
+        byScope[scopeKey] = new Set(next)
+      }
+      return { pierreDiffCommentExpandedIdsByScope: byScope }
+    }),
   persistedUIReady: false,
   uiZoomLevel: 0,
   setUIZoomLevel: (level) => set({ uiZoomLevel: level }),

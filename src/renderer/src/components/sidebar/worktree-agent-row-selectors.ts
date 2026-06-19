@@ -1,5 +1,6 @@
 import type { RetainedAgentEntry } from '@/store/slices/agent-status'
 import type { AppState } from '@/store/types'
+import { reuseArrayIfEqual } from '@/lib/referential-collections'
 import type {
   AgentStatusEntry,
   AgentStatusOrchestrationContext,
@@ -47,18 +48,6 @@ let tabWorktreeIndexCache: TabWorktreeIndexCache | null = null
 let liveEntriesByWorktreeCache: LiveEntriesByWorktreeCache | null = null
 let migrationUnsupportedByWorktreeCache: MigrationUnsupportedByWorktreeCache | null = null
 let retainedEntriesByWorktreeCache: RetainedEntriesByWorktreeCache | null = null
-
-function reuseArrayIfEqual<T>(previous: T[] | undefined, next: T[]): T[] {
-  if (!previous || previous.length !== next.length) {
-    return next
-  }
-  for (let i = 0; i < next.length; i += 1) {
-    if (previous[i] !== next[i]) {
-      return next
-    }
-  }
-  return previous
-}
 
 function getTabIdToWorktreeId(
   tabsByWorktree: WorktreeAgentRowsState['tabsByWorktree']

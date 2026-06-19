@@ -12,10 +12,14 @@ import {
 import { useAppStore } from '@/store'
 import { scrollTopCache, setWithLRU } from '@/lib/scroll-cache'
 import { computeEditorFontSize } from '@/lib/editor-font-zoom'
+import { usePierreDiffCommentAnnotations } from '@/components/diff-comments/usePierreDiffCommentAnnotations'
 import { getContentFingerprint, getDiffIdentityVersion } from './pierre-content-fingerprint'
+import { getPierreDiffCommentAnnotationsIdentity } from './pierre-diff-comment-annotations-identity'
 import { getOrParseDiffFromFiles } from './parsed-diff-cache'
 import { PIERRE_DIFF_THEMES, usePierreDiffThemeType } from './pierre-diff-theme'
 import type { LargeDiffRenderLimit } from './large-diff-render-limit'
+import type { DiffComment } from '../../../../shared/types'
+import type { DiffSource } from '@/store/slices/editor'
 
 type DiffViewerProps = {
   modelKey: string
@@ -23,6 +27,8 @@ type DiffViewerProps = {
   modifiedContent: string
   language: string
   relativePath: string
+  worktreeId?: string
+  diffSource?: DiffSource
   sideBySide: boolean
   branchOldPath?: string
   // Why: fingerprints computed once when the diff resolved (P6). Present only
@@ -37,6 +43,12 @@ type DiffViewerProps = {
 const PIERRE_DEFAULT_FONT_SIZE = 13
 const PIERRE_DEFAULT_LINE_HEIGHT = 20
 const PIERRE_CODE_VIEW_DIFF_ITEM_ID = 'orca-single-file-diff'
+const PIERRE_SINGLE_FILE_DIFF_COMMENT_SOURCES = new Set<DiffSource>([
+  'unstaged',
+  'staged',
+  'branch',
+  'commit'
+])
 // Pierre defaults to 13px text and a 20px line box. Diff zoom keeps that
 // proportion so virtual metrics and rendered rows continue to agree.
 const PIERRE_DEFAULT_LINE_HEIGHT_RATIO = PIERRE_DEFAULT_LINE_HEIGHT / PIERRE_DEFAULT_FONT_SIZE
@@ -142,10 +154,13 @@ export default function DiffViewer({
   sideBySide,
   branchOldPath,
   originalContentFingerprint,
-  modifiedContentFingerprint
+  modifiedContentFingerprint,
+  largeDiffRenderLimit,
+  worktreeId,
+  diffSource
 }: DiffViewerProps): React.JSX.Element {
   const editorFontZoomLevel = useAppStore((s) => s.editorFontZoomLevel)
-  const codeViewRef = useRef<CodeViewHandle<undefined> | null>(null)
+  const codeViewRef = useRef<CodeViewHandle<DiffComment> | null>(null)
   const themeType = usePierreDiffThemeType()
   const codeViewScrollElementRef = useRef<HTMLDivElement | null>(null)
   const latestLogicalScrollTopRef = useRef<number | null>(null)
@@ -204,11 +219,33 @@ export default function DiffViewer({
     () => (fileDiff ? getPierreCodeViewDiffIdentity({ fileDiff, oldFile, newFile }) : null),
     [fileDiff, newFile, oldFile]
   )
-  const diffItemVersion = useMemo(
-    () => (diffIdentity ? getDiffIdentityVersion(diffIdentity) : 0),
-    [diffIdentity]
+  const supportsDiffComments = Boolean(
+    worktreeId && diffSource && PIERRE_SINGLE_FILE_DIFF_COMMENT_SOURCES.has(diffSource) && fileDiff
   )
-  const items = useMemo<CodeViewItem<undefined>[]>(
+  const commentsEnabled = supportsDiffComments && !largeDiffRenderLimit?.limited
+  const pierreDiffComments = usePierreDiffCommentAnnotations({
+    enabled: commentsEnabled,
+    worktreeId,
+    relativePath,
+    fileDiff,
+    codeViewRef,
+    itemId: PIERRE_CODE_VIEW_DIFF_ITEM_ID
+  })
+  const diffItemVersion = useMemo(
+    () =>
+      diffIdentity
+        ? getDiffIdentityVersion(
+            [
+              diffIdentity,
+              // Why: Pierre only syncs reused CodeView item payloads when the
+              // item version changes; annotations are part of that payload.
+              getPierreDiffCommentAnnotationsIdentity(pierreDiffComments.annotations)
+            ].join(':comments:')
+          )
+        : 0,
+    [diffIdentity, pierreDiffComments.annotations]
+  )
+  const items = useMemo<CodeViewItem<DiffComment>[]>(
     () =>
       fileDiff
         ? [
@@ -216,17 +253,18 @@ export default function DiffViewer({
               id: PIERRE_CODE_VIEW_DIFF_ITEM_ID,
               type: 'diff',
               fileDiff,
-              version: diffItemVersion
+              version: diffItemVersion,
+              annotations: pierreDiffComments.annotations
             }
           ]
         : [],
-    [diffItemVersion, fileDiff]
+    [diffItemVersion, fileDiff, pierreDiffComments.annotations]
   )
   const initialScrollKey = fileDiff
     ? `${modelKey}:${diffIdentity ?? ''}:${sideBySide ? 'split' : 'unified'}:${itemMetrics.lineHeight}`
     : null
 
-  const setCodeViewHandle = useCallback((handle: CodeViewHandle<undefined> | null): void => {
+  const setCodeViewHandle = useCallback((handle: CodeViewHandle<DiffComment> | null): void => {
     codeViewRef.current = handle
   }, [])
 
@@ -254,8 +292,18 @@ export default function DiffViewer({
     [initialScrollKey, modelKey]
   )
 
+  const pendingScrollToComment = pierreDiffComments.pendingScrollToComment
   const restoreInitialScroll = useCallback((): boolean => {
     if (initialScrollKey == null || restoredScrollKeyRef.current === initialScrollKey) {
+      return true
+    }
+    // Why: a pending scroll-to-note owns the initial position for this file. On
+    // a fresh mount (e.g. navigating back to a previously-scrolled diff tab),
+    // restoring the cached scrollTop would win the race and park the diff at the
+    // pre-navigation position instead of the note. Mark restore handled and let
+    // the comment hook scroll to the line.
+    if (pendingScrollToComment) {
+      restoredScrollKeyRef.current = initialScrollKey
       return true
     }
     const codeView = codeViewRef.current
@@ -276,7 +324,7 @@ export default function DiffViewer({
     latestLogicalScrollTopRef.current = target.position
     restoredScrollKeyRef.current = initialScrollKey
     return true
-  }, [initialScrollKey, modelKey])
+  }, [initialScrollKey, modelKey, pendingScrollToComment])
 
   useEffect(() => {
     if (initialScrollKey == null || restoredScrollKeyRef.current === initialScrollKey) {
@@ -312,7 +360,7 @@ export default function DiffViewer({
     }
   }, [initialScrollKey, restoreInitialScroll])
 
-  const options = useMemo<CodeViewOptions<undefined>>(
+  const options = useMemo<CodeViewOptions<DiffComment>>(
     () => ({
       diffStyle: sideBySide ? 'split' : 'unified',
       hunkSeparators: 'line-info',
@@ -320,9 +368,11 @@ export default function DiffViewer({
       themeType,
       tokenizeMaxLineLength: 1_000,
       itemMetrics,
-      layout: { paddingTop: 0, paddingBottom: 0, gap: 0 }
+      layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },
+      ...pierreDiffComments.options,
+      ...(pierreDiffComments.unsafeCSS ? { unsafeCSS: pierreDiffComments.unsafeCSS } : {})
     }),
-    [itemMetrics, sideBySide, themeType]
+    [itemMetrics, pierreDiffComments.options, pierreDiffComments.unsafeCSS, sideBySide, themeType]
   )
 
   const handleCodeViewScroll = useCallback(
@@ -363,7 +413,11 @@ export default function DiffViewer({
         style={scrollStyle}
         options={options}
         onScroll={handleCodeViewScroll}
+        selectedLines={pierreDiffComments.selectedLines}
+        onSelectedLinesChange={pierreDiffComments.onSelectedLinesChange}
+        renderAnnotation={commentsEnabled ? pierreDiffComments.renderAnnotation : undefined}
       />
+      {pierreDiffComments.popover}
     </div>
   )
 }

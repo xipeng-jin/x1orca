@@ -8846,6 +8846,28 @@
                   "f0c6e2a581": "This branch is not ready for a {{value0}} yet.",
                   "h3i4j5k607": "Checking whether this branch can create a {{value0}}…"
                 }
+              },
+              "diff": {
+                "comments": {
+                  "inline": {
+                    "list": {
+                      "170d7bc176": "Hover over a line in the diff view and click the + to add a note.",
+                      "7be4ecd6b4": "Open {{value0}}",
+                      "297fceb9e0": "Clear notes for {{value0}}",
+                      "772c893e98": "Open {{value0}} ({{value1}})",
+                      "a557be2ba7": "Open note on {{value0}}",
+                      "20bea69f5a": "MD",
+                      "7a637bf228": "Diff",
+                      "9a6394db48": "Sent",
+                      "8fd6340377": "Scroll to note",
+                      "b7151ab168": "Scroll to note on {{value0}}",
+                      "83cfadf32a": "Copy note",
+                      "ccf1c56146": "Copy note on line {{value0}}",
+                      "6ecda219d8": "Delete note",
+                      "1c1fe0f6da": "Delete note on line {{value0}}"
+                    }
+                  }
+                }
               }
             }
           },
@@ -10702,6 +10724,18 @@
           },
           "useDiffCommentDecorator": {
             "995fa28b50": "esta nota"
+          },
+          "DiffCommentPopoverForm": {
+            "63eeebc1a3": "Add note for the AI",
+            "7939131b21": "Add note",
+            "c491aa3d3d": "Saving...",
+            "625fb26b4b": "Cancel"
+          },
+          "PierreDiffCommentPopover": {
+            "62c8eab631": "Add note for the AI",
+            "49c3eb59a3": "Add note",
+            "03423bd896": "Saving...",
+            "20898bb7e1": "Cancel"
           }
         }
       },

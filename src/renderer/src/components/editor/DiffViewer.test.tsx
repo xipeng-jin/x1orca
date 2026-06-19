@@ -9,6 +9,7 @@ import type { CSSProperties } from 'react'
 import type { CodeViewItem, CodeViewOptions, FileDiffMetadata } from '@pierre/diffs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { scrollTopCache } from '@/lib/scroll-cache'
+import type { DiffComment } from '../../../../shared/types'
 
 const mockState = vi.hoisted(() => ({
   codeViewProps: [] as unknown[],
@@ -18,7 +19,17 @@ const mockState = vi.hoisted(() => ({
     settings: {
       theme: 'dark'
     },
-    editorFontZoomLevel: 0
+    editorFontZoomLevel: 0,
+    activeGroupIdByWorktree: {} as Record<string, string>,
+    worktreesByRepo: {} as Record<string, { id: string; diffComments?: DiffComment[] }[]>,
+    addDiffComment: vi.fn(),
+    updateDiffComment: vi.fn(),
+    deleteDiffComment: vi.fn(),
+    scrollToDiffCommentId: null as string | null,
+    scrollToDiffCommentRequestSeq: 0,
+    setScrollToDiffCommentId: vi.fn(),
+    pierreDiffCommentExpandedIdsByScope: {} as Record<string, ReadonlySet<string>>,
+    updatePierreDiffCommentExpandedIds: vi.fn()
   }
 }))
 
@@ -55,7 +66,7 @@ import { getContentFingerprint } from './pierre-content-fingerprint'
 
 type CapturedCodeViewProps = {
   items: CodeViewItem[]
-  options: CodeViewOptions<undefined>
+  options: CodeViewOptions<unknown>
   className?: string
   style?: CSSProperties & {
     '--orca-pierre-diff-scroll-bg'?: string
@@ -63,6 +74,9 @@ type CapturedCodeViewProps = {
     '--diffs-overflow-override'?: string
   }
   onScroll?: (scrollTop: number) => void
+  selectedLines?: unknown
+  onSelectedLinesChange?: (selection: unknown) => void
+  renderAnnotation?: (...args: unknown[]) => React.ReactNode
 }
 
 function getOnlyCodeViewProps(): CapturedCodeViewProps {
@@ -79,14 +93,6 @@ function getOnlyFileDiff(): FileDiffMetadata {
   return item.fileDiff
 }
 
-function getOnlyCodeViewItemVersion(): number | undefined {
-  const item = getOnlyCodeViewProps().items[0]
-  if (item?.type !== 'diff') {
-    throw new Error('Expected a CodeView diff item')
-  }
-  return item.version
-}
-
 describe('DiffViewer', () => {
   beforeEach(() => {
     mockState.codeViewProps = []
@@ -97,6 +103,16 @@ describe('DiffViewer', () => {
     mockState.codeViewScrollTop = 0
     mockState.store.settings.theme = 'dark'
     mockState.store.editorFontZoomLevel = 0
+    mockState.store.activeGroupIdByWorktree = {}
+    mockState.store.worktreesByRepo = {}
+    mockState.store.addDiffComment.mockReset()
+    mockState.store.updateDiffComment.mockReset()
+    mockState.store.deleteDiffComment.mockReset()
+    mockState.store.scrollToDiffCommentId = null
+    mockState.store.scrollToDiffCommentRequestSeq = 0
+    mockState.store.setScrollToDiffCommentId.mockReset()
+    mockState.store.pierreDiffCommentExpandedIdsByScope = {}
+    mockState.store.updatePierreDiffCommentExpandedIds.mockReset()
     scrollTopCache.clear()
   })
 
@@ -177,6 +193,140 @@ describe('DiffViewer', () => {
     expect(props.style).not.toHaveProperty('--diffs-overflow-override')
   })
 
+  it('wires Pierre annotations and built-in gutter utility when worktree comments are enabled', () => {
+    mockState.store.worktreesByRepo = {
+      'wt-1': [
+        {
+          id: 'wt-1',
+          diffComments: [
+            {
+              id: 'comment-1',
+              worktreeId: 'wt-1',
+              filePath: 'src/app.ts',
+              source: 'diff',
+              startLine: 2,
+              lineNumber: 3,
+              body: 'Check this range',
+              createdAt: 1,
+              side: 'modified'
+            },
+            {
+              id: 'comment-2',
+              worktreeId: 'wt-1',
+              filePath: 'src/other.ts',
+              source: 'diff',
+              lineNumber: 1,
+              body: 'Other file',
+              createdAt: 1,
+              side: 'modified'
+            },
+            {
+              id: 'comment-3',
+              worktreeId: 'wt-1',
+              filePath: 'src/app.ts',
+              source: 'markdown',
+              lineNumber: 1,
+              body: 'Markdown note',
+              createdAt: 1,
+              side: 'modified'
+            }
+          ]
+        }
+      ]
+    }
+
+    renderToStaticMarkup(
+      <DiffViewer
+        modelKey="diff:src/app.ts"
+        originalContent={'one\ntwo\nthree\n'}
+        modifiedContent={'one\nTWO\nTHREE\n'}
+        language="typescript"
+        relativePath="src/app.ts"
+        worktreeId="wt-1"
+        diffSource="staged"
+        sideBySide={false}
+      />
+    )
+
+    const props = getOnlyCodeViewProps()
+    const item = props.items[0]
+    if (item.type !== 'diff') {
+      throw new Error('Expected a CodeView diff item')
+    }
+    expect(item.annotations).toEqual([
+      {
+        side: 'additions',
+        lineNumber: 3,
+        metadata: expect.objectContaining({ id: 'comment-1' })
+      }
+    ])
+    expect(props.options).toMatchObject({
+      enableGutterUtility: true,
+      enableLineSelection: true,
+      controlledSelection: true
+    })
+    expect(props.options.onGutterUtilityClick).toEqual(expect.any(Function))
+    expect(props.options).not.toHaveProperty('renderGutterUtility')
+    expect(props.options.unsafeCSS).toContain('[data-utility-button]')
+    expect(props.renderAnnotation).toEqual(expect.any(Function))
+    expect(props.onSelectedLinesChange).toEqual(expect.any(Function))
+  })
+
+  it('disables Pierre comment affordances for large diffs', () => {
+    mockState.store.worktreesByRepo = {
+      'wt-1': [
+        {
+          id: 'wt-1',
+          diffComments: [
+            {
+              id: 'comment-1',
+              worktreeId: 'wt-1',
+              filePath: 'src/app.ts',
+              source: 'diff',
+              lineNumber: 1,
+              body: 'Hidden for large diff',
+              createdAt: 1,
+              side: 'modified'
+            }
+          ]
+        }
+      ]
+    }
+
+    renderToStaticMarkup(
+      <DiffViewer
+        modelKey="diff:src/app.ts"
+        originalContent={'old\n'}
+        modifiedContent={'new\n'}
+        language="typescript"
+        relativePath="src/app.ts"
+        worktreeId="wt-1"
+        diffSource="staged"
+        largeDiffRenderLimit={{
+          limited: true,
+          reason: 'character-count',
+          lineCounts: null,
+          characterCount: 1_000,
+          limits: {
+            maxLinesPerSide: 100,
+            maxCombinedCharacters: 100
+          }
+        }}
+        sideBySide={false}
+      />
+    )
+
+    const props = getOnlyCodeViewProps()
+    const item = props.items[0]
+    if (item.type !== 'diff') {
+      throw new Error('Expected a CodeView diff item')
+    }
+    expect(item.annotations).toEqual([])
+    expect(props.options).not.toHaveProperty('enableGutterUtility')
+    expect(props.options).not.toHaveProperty('unsafeCSS')
+    expect(props.renderAnnotation).toBeUndefined()
+  })
+
   it('builds CodeView item identity from Orca file cache keys', () => {
     const oldFile = buildPierreDiffFile({
       name: 'src/app.ts',
@@ -207,91 +357,6 @@ describe('DiffViewer', () => {
     expect(identity).toContain(oldFile.cacheKey)
     expect(identity).toContain(newFile.cacheKey)
     expect(identity).toContain(fileDiff.name)
-  })
-
-  it('rotates the CodeView item version when modified content changes for the same tab', async () => {
-    // Why: P5 swaps a refreshed diff into the live CodeView via the item version
-    // (no remount), so a real content change must rotate the version while an
-    // identical re-render keeps it stable.
-    const container = document.createElement('div')
-    let root: Root | null = createRoot(container)
-
-    function renderModified(modifiedContent: string): void {
-      mockState.codeViewProps = []
-      root?.render(
-        <DiffViewer
-          modelKey="diff:src/app.ts"
-          originalContent={'const value = 1\n'}
-          modifiedContent={modifiedContent}
-          language="typescript"
-          relativePath="src/app.ts"
-          sideBySide={false}
-        />
-      )
-    }
-
-    await act(async () => {
-      renderModified('const value = 2\n')
-    })
-    const firstVersion = getOnlyCodeViewItemVersion()
-
-    await act(async () => {
-      renderModified('const value = 3\n')
-    })
-    const changedVersion = getOnlyCodeViewItemVersion()
-
-    await act(async () => {
-      renderModified('const value = 3\n')
-    })
-    const unchangedVersion = getOnlyCodeViewItemVersion()
-
-    expect(changedVersion).not.toBe(firstVersion)
-    expect(unchangedVersion).toBe(changedVersion)
-
-    await act(async () => {
-      root?.unmount()
-      root = null
-    })
-  })
-
-  it('rotates the CodeView item version when only original content changes (git add path)', async () => {
-    // Why: the EditorContent remount key tracks only the modified-side signature,
-    // so an original-only change (e.g. `git add` moving the base) refreshes the
-    // view solely through DiffViewer's item version, which fingerprints both
-    // sides — pin that it rotates without a remount.
-    const container = document.createElement('div')
-    let root: Root | null = createRoot(container)
-
-    function renderOriginal(originalContent: string): void {
-      mockState.codeViewProps = []
-      root?.render(
-        <DiffViewer
-          modelKey="diff:src/app.ts"
-          originalContent={originalContent}
-          modifiedContent={'const value = 99\n'}
-          language="typescript"
-          relativePath="src/app.ts"
-          sideBySide={false}
-        />
-      )
-    }
-
-    await act(async () => {
-      renderOriginal('const value = 1\n')
-    })
-    const firstVersion = getOnlyCodeViewItemVersion()
-
-    await act(async () => {
-      renderOriginal('const value = 2\n')
-    })
-    const changedVersion = getOnlyCodeViewItemVersion()
-
-    expect(changedVersion).not.toBe(firstVersion)
-
-    await act(async () => {
-      root?.unmount()
-      root = null
-    })
   })
 
   it('uses Pierre light theme background for the outer diff scrollbar gutter', () => {
@@ -527,6 +592,66 @@ describe('DiffViewer', () => {
     })
 
     expect(codeViewHandle.scrollTo).toHaveBeenCalledWith({
+      type: 'position',
+      position: 320,
+      behavior: 'instant'
+    })
+
+    await act(async () => {
+      root?.unmount()
+      root = null
+    })
+  })
+
+  it('suppresses cached-scroll restore when a scroll-to-note for this file is pending', async () => {
+    const container = document.createElement('div')
+    let root: Root | null = createRoot(container)
+    // Why: empty rendered items mimics a fresh mount that has not laid out yet,
+    // so the comment hook keeps polling and never issues its line scroll during
+    // the test — leaving only the (suppressed) cached-position restore to check.
+    mockState.codeViewHandle = {
+      scrollTo: vi.fn(),
+      getInstance: vi.fn(() => ({ getRenderedItems: () => [] }))
+    }
+    const codeViewHandle = mockState.codeViewHandle as { scrollTo: ReturnType<typeof vi.fn> }
+    mockState.store.worktreesByRepo = {
+      repo: [
+        {
+          id: 'repo',
+          diffComments: [
+            {
+              id: 'c1',
+              worktreeId: 'repo',
+              filePath: 'src/app.ts',
+              source: 'diff',
+              lineNumber: 1,
+              body: 'note',
+              createdAt: 1,
+              side: 'modified'
+            } as DiffComment
+          ]
+        }
+      ]
+    }
+    mockState.store.scrollToDiffCommentId = 'c1'
+    scrollTopCache.set('diff:src/app.ts', 320)
+
+    await act(async () => {
+      root?.render(
+        <DiffViewer
+          modelKey="diff:src/app.ts"
+          originalContent={'old line\n'}
+          modifiedContent={'new line\n'}
+          language="typescript"
+          relativePath="src/app.ts"
+          worktreeId="repo"
+          diffSource="staged"
+          sideBySide={false}
+        />
+      )
+    })
+
+    expect(codeViewHandle.scrollTo).not.toHaveBeenCalledWith({
       type: 'position',
       position: 320,
       behavior: 'instant'

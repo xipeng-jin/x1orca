@@ -882,6 +882,52 @@ const WORKTREE_ID_KEYED_MAP_KEYS = [
   'defaultTerminalTabsAppliedByWorktreeId'
 ] as const satisfies readonly (keyof AppState)[]
 
+const PIERRE_DIFF_COMMENT_SCOPE_SEPARATOR = '\u001f'
+
+function renamePierreDiffCommentExpansionScopes(
+  byScope: AppState['pierreDiffCommentExpandedIdsByScope'] | undefined,
+  oldWorktreeId: string,
+  newWorktreeId: string
+): AppState['pierreDiffCommentExpandedIdsByScope'] {
+  if (!byScope) {
+    return {}
+  }
+  const oldPrefix = `${oldWorktreeId}${PIERRE_DIFF_COMMENT_SCOPE_SEPARATOR}`
+  const newPrefix = `${newWorktreeId}${PIERRE_DIFF_COMMENT_SCOPE_SEPARATOR}`
+  let changed = false
+  const next = { ...byScope }
+  for (const [scopeKey, ids] of Object.entries(byScope)) {
+    if (!scopeKey.startsWith(oldPrefix)) {
+      continue
+    }
+    next[`${newPrefix}${scopeKey.slice(oldPrefix.length)}`] = ids
+    delete next[scopeKey]
+    changed = true
+  }
+  return changed ? next : byScope
+}
+
+function omitPierreDiffCommentExpansionScopes(
+  byScope: AppState['pierreDiffCommentExpandedIdsByScope'] | undefined,
+  worktreeIds: ReadonlySet<string>
+): AppState['pierreDiffCommentExpandedIdsByScope'] {
+  if (!byScope) {
+    return {}
+  }
+  let changed = false
+  const next = { ...byScope }
+  for (const scopeKey of Object.keys(byScope)) {
+    const separatorIndex = scopeKey.indexOf(PIERRE_DIFF_COMMENT_SCOPE_SEPARATOR)
+    const worktreeId = separatorIndex === -1 ? scopeKey : scopeKey.slice(0, separatorIndex)
+    if (!worktreeIds.has(worktreeId)) {
+      continue
+    }
+    delete next[scopeKey]
+    changed = true
+  }
+  return changed ? next : byScope
+}
+
 /**
  * Re-key every worktree-id-keyed map (plus the Set, openFiles[].worktreeId, and
  * the active/renaming pointers) from `oldWorktreeId` to `newWorktreeId` after a
@@ -988,6 +1034,11 @@ function buildWorktreeRenameState(
         ])
       )
     : s.sleepingAgentSessionsByPaneKey
+  const pierreDiffCommentExpandedIdsByScope = renamePierreDiffCommentExpansionScopes(
+    s.pierreDiffCommentExpandedIdsByScope,
+    oldWorktreeId,
+    newWorktreeId
+  )
 
   return {
     ...(renamed as Partial<AppState>),
@@ -1004,6 +1055,9 @@ function buildWorktreeRenameState(
       : {}),
     ...(sleepingAgentSessionsByPaneKey !== s.sleepingAgentSessionsByPaneKey
       ? { sleepingAgentSessionsByPaneKey }
+      : {}),
+    ...(pierreDiffCommentExpandedIdsByScope !== s.pierreDiffCommentExpandedIdsByScope
+      ? { pierreDiffCommentExpandedIdsByScope }
       : {}),
     ...(s.activeWorktreeId === oldWorktreeId ? { activeWorktreeId: newWorktreeId } : {}),
     // The active workspace key derives from the worktree id, so keep it in sync when the active worktree is renamed.
@@ -1187,6 +1241,10 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
     gitBranchCompareRequestKeyByWorktree: omitByWorktree(s.gitBranchCompareRequestKeyByWorktree),
     showDotfilesByWorktree: omitByWorktree(s.showDotfilesByWorktree),
     expandedDirs: omitByWorktree(s.expandedDirs),
+    pierreDiffCommentExpandedIdsByScope: omitPierreDiffCommentExpansionScopes(
+      s.pierreDiffCommentExpandedIdsByScope,
+      worktreeIdSet
+    ),
     // Per-file editor state for removed files
     editorDrafts: omitByFileId(s.editorDrafts),
     markdownViewMode: omitByFileId(s.markdownViewMode),
@@ -2001,6 +2059,10 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         }
         const nextExpandedDirs = { ...s.expandedDirs }
         delete nextExpandedDirs[worktreeId]
+        const nextPierreDiffCommentExpandedIdsByScope = omitPierreDiffCommentExpansionScopes(
+          s.pierreDiffCommentExpandedIdsByScope,
+          new Set([worktreeId])
+        )
         const nextShowDotfilesByWorktree = { ...s.showDotfilesByWorktree }
         delete nextShowDotfilesByWorktree[worktreeId]
         const nextRightSidebarExplorerViewByWorktree = {
@@ -2072,6 +2134,7 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
           markdownFrontmatterVisible: nextMarkdownFrontmatterVisible,
           showDotfilesByWorktree: nextShowDotfilesByWorktree,
           expandedDirs: nextExpandedDirs,
+          pierreDiffCommentExpandedIdsByScope: nextPierreDiffCommentExpandedIdsByScope,
           gitStatusByWorktree: nextGitStatusByWorktree,
           gitIgnoredPathsByWorktree: nextGitIgnoredPathsByWorktree,
           gitConflictOperationByWorktree: nextGitConflictOperationByWorktree,
